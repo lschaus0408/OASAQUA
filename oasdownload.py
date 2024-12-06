@@ -9,22 +9,33 @@ the module will download all the files provided by that set of keys. The raw dat
 in a temp folder with a naming structure that is recognized by the csvreader module.\n
 """
 
-from random import sample
 import shutil
+import re
+import warnings
 
+from random import sample
 from os import listdir, rename
 from os.path import isfile, join
 from typing import Optional, Union
-
-from tqdm import tqdm
-
-import json
 from urllib.error import URLError
 from pathlib import Path
+from copy import deepcopy
 
+import json
+import requests
+
+from tqdm import tqdm
 from wget import bar_adaptive, download
 
-from OAS_API.helper_functions import gunzip
+from helper_functions import gunzip
+
+
+class EmptyRequestWarning(Warning):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return repr(self.message)
 
 
 class DownloadOAS:
@@ -33,9 +44,9 @@ class DownloadOAS:
     When the object is called, the program will download all relevant files and store them in the
     specified directory.
     ### Args:
-        \tsearch {Tuple[Tuple[str,str]]} -- Tuple containing a tuple-pair of category and key keywords \n
-        \tfile_path {str} -- Path to the OAS_files_dictionary \n
-        \tfile_destination {str} -- Destination path for the downloaded files
+        \tsearch{Tuple[Tuple[str,str]]} -- Tuple containing a tuple-pair of category and key \n
+        \tfile_path{str} -- Path to the OAS_files_dictionary \n
+        \tfile_destination{str} -- Destination path for the downloaded files
     ### Returns:
         \tRaw files from the OAS Database, downloaded into the specified folder
     """
@@ -56,20 +67,22 @@ class DownloadOAS:
         if not self.file_destination.is_dir():
             self.file_destination.mkdir()
 
-        assert self.file_path.is_file(), f"File {self.file_path} not found."
+        # ### CHANGE THIS FOR CONNECTION REQUEST
+        # assert self.file_path.is_file(), f"File {self.file_path} not found."
 
-        with open(self.file_path, "r") as infile:
-            self.dictionary = json.load(infile)
+        # with open(self.file_path, "r", encoding="utf-8") as infile:
+        #     self.dictionary = json.load(infile)
 
     def __call__(self):
         """
         ## Method that runs the object as intended.
         Grabs the files, makes a list with the union of all OAS files,
-        then it creates the 'wget' commands. The final step is to download the files, unzip the components
-        and rename the files within the directory, followed by the cleanup of the archive files.
+        then it creates the 'wget' commands. The final step is to download the files,
+        unzip the components and rename the files within the directory,
+        followed by the cleanup of the archive files.
         """
         # Make union of files to be downloaded
-        self.make_union()
+        self.make_request()
 
         # If one would like only a sample of the database
         if self.sample_size is not None:
@@ -88,9 +101,10 @@ class DownloadOAS:
         self.clean_up()
 
     def set_search(self, search: tuple[tuple[str, str]]) -> None:
+        """Setter for search attribute"""
         self.search = search
 
-    def make_union(self) -> None:
+    def make_request(self) -> None:
         """
         ## Opens multiple files based on the cats/keys and creates a list of files to download.
         This list should not contain any duplicates, so we use sets to create the intersection.
@@ -99,82 +113,99 @@ class DownloadOAS:
         ### Updates: \n
             \tself.files
         """
+
         if self.search is None:
             raise TypeError("Please set the search terms before using OASDownload.")
-        # Grab a (cat, key) pair
+
+        queries = self._create_queries()
+
+        combined_urls = set()
+        # Process each query individually
+        for query in queries:
+            req = requests.post(
+                "https://opig.stats.ox.ac.uk/webapps/oas/oas_unpaired/",
+                data=query,
+                timeout=1,
+            )
+            page_text = req.text
+            start_index = page_text.find("var CSV = [")
+            end_index = page_text.find("].join")
+            raw_requests = page_text[start_index + 10 : end_index]
+            urls = self._extract_urls(raw_requests)
+            # Warn if the URL list is empty
+            if not urls:
+                warnings.warn(
+                    f"Query: {query} resulted in an empty request! Please check if the query was valid.",
+                    EmptyRequestWarning,
+                )
+            combined_urls.update(urls)
+
+        self.files = combined_urls
+
+    def _create_queries(self):
+        """
+        ## Creates Queries from parsed user-queries
+        """
+        queries_list = []
         for pair in self.search:
-            # Make sure a cat is actually passed
+            # Make sure a category is actually passed
             assert (
                 pair[0] is not None
             ), "None passed as category search term. Categories are always needed."
+            # Make sure missing query is interpreted as any query
             try:
                 value = pair[1]
             except IndexError:
-                value = None
-            # If a key has been passed, then use the key
-            if value is not None:
-                file_list = self._find_data(
-                    key=pair[1], values=self.dictionary[pair[0]]
-                )
-                # Update the main list with intersection of both
-                if self.files:
-                    self.files = list(set(self.files) & set(file_list))
-                    assert self.files, f"Query combination {pair} with previous queries returns an empty list"
-                else:
-                    self.files = file_list
+                value = "*"
 
-            # If no key has been passed, use all the keys under the passed cat
+            # Keep track of previously seen categories
+            if any(pair[0] in dictionary for dictionary in queries_list):
+                queries_list_extension = []
+                for query in queries_list:
+                    # Copy each query and change the desired value
+                    copied_query = deepcopy(query)
+                    copied_query[pair[0]] = value
+                    # Make queries list extension only have unique dict entries
+                    queries_list_extension.append(copied_query)
+                    queries_list_extension = [
+                        dict(set_of_dict)
+                        for set_of_dict in set(
+                            frozenset(dictionary.items())
+                            for dictionary in queries_list_extension
+                        )
+                    ]
+                # Extend queries with queries list extension
+                queries_list.extend(queries_list_extension)
             else:
-                file_list = [element[1] for element in self.dictionary[pair[0]]]
-                # Flatten list
-                file_list = [item for sublist in file_list for item in sublist]
-                # Update the main list with intersection of both
-                if self.files:
-                    self.files = list(set(self.files) & set(file_list))
-                    assert self.files, f"Query combination {pair} with previous queries returns an empty list"
+                # Create list entry if none exist
+                if not queries_list:
+                    queries_list.append({pair[0]: value})
+                # Add key:value to all existing members
                 else:
-                    self.files = file_list
+                    for query in queries_list:
+                        query[pair[0]] = value
+        return queries_list
 
-    def _find_data(self, key: str, values: list) -> list[str]:
+    @staticmethod
+    def _extract_urls(raw_requests: str):
         """
-        ## Private function only to be used by make_union.
-        Iterates through values to find the key and returns the list of data paired with that key.
-        ### Args: \n
-            \tkey {str} -- Key that defines the data \n
-            \tvalues {list} --  List containind the key/data pairs
-        ### Returns:\n
-            \tlist[str] -- Desired data
+        ## Extracts URLs from the raw requests
+        ### Args:
+            \traw_requests{str} -- raw data from HTTP request
+        ### Returns:
+            \turl_list -- list of URLs
         """
-        for i in values:
-            if i[0] == key:
-                return i[1]
-
-        raise AssertionError(f"Key {key} not in the provided dataset")
-
-    def create_url(self, url: str) -> str:
-        """
-        ## Creates a shell command given a file name that one wants to download.
-        OAS is divided into two databases: OAS Paired and OAS Unpaired.
-        We use the json file to determine whether the download is performed from either of the
-        databases.
-        ### Args: \n
-            \tcmd {str} -- String that is to be converted in to a shell command
-        ### Returns: \n
-            \tstr -- String converted to a shell command
-        """
-        # Figure out if the database to be called is OAS Paired or OAS Unpaired
-        if "_unpaired." in str(self.file_path):
-            url = "http://opig.stats.ox.ac.uk/webapps/ngsdb/unpaired" + url
-
-        elif "_paired." in str(self.file_path):
-            url = "http://opig.stats.ox.ac.uk/webapps/ngsdb/paired" + url
-
-        else:
-            raise ValueError(
-                f"Could not resolve the OAS database from the provided json file or string. {self.file_path} contains neither keywords '_paired.' or '_unpaired.'!"
-            )
-
-        return url
+        command_start = [
+            message.start() for message in re.finditer("wget", raw_requests)
+        ]
+        file_suffix = [
+            message.start() for message in re.finditer("csv.gz", raw_requests)
+        ]
+        url_list = []
+        for index, command in enumerate(command_start):
+            url = raw_requests[command + 5 : file_suffix[index] + 6]
+            url_list.append(url)
+        return url_list
 
     def make_shell_file(self, filename: str = "OASdownload.sh") -> None:
         """
@@ -191,10 +222,10 @@ class DownloadOAS:
         if check.is_file():
             check.unlink()
 
-        with check.open(mode="w") as f:
-            for dataset in self.files:
-                f.write(self.create_url(dataset))
-                f.write("\n")
+        with check.open(mode="w", encoding="utf-8") as file:
+            for url in self.files:
+                file.write("wget " + url)
+                file.write("\n")
 
     def download_files(self):
         """
@@ -202,20 +233,20 @@ class DownloadOAS:
         """
         tqdm.write(f"Downloading {len(self.files)} files... \n")
         # Using range to print progess to console
-        for i in range(len(self.files)):
-            url = self.create_url(self.files[i])
+        for index, file in enumerate(self.files):
             # Use wget to download files, bar_adaptive is from the package
             try:
-                download(url, out=str(self.file_destination), bar=bar_adaptive)
+                download(file, out=str(self.file_destination), bar=bar_adaptive)
             except URLError as err:
                 print(
-                    f"\n WARNING: The following URL is skipped due to an exception occuring: \n {url}!"
+                    f"\n WARNING: The following URL is skipped due to an exception occuring: \
+                    \n {file}!"
                 )
                 print(err)
                 continue
             # Currently set to every 10th download to not clog the console too much
-            if (i + 1) % 10 == 0:
-                tqdm.write(f"\n Downloaded {i+1} file(s) out of {len(self.files)}")
+            if (index + 1) % 10 == 0:
+                tqdm.write(f"\n Downloaded {index+1} file(s) out of {len(self.files)}")
         # End message
         tqdm.write("\nFinished Downloading Files")
 
@@ -229,7 +260,7 @@ class DownloadOAS:
         if path is None:
             path = self.file_destination
         # List all files in the directory that contain a .gz
-        p = Path(path).glob("*.gz")
+        filepath = Path(path).glob("*.gz")
 
         try:
             # Registers the gz unpacker from the helper_functions module
@@ -240,18 +271,19 @@ class DownloadOAS:
                 ],
                 gunzip,
             )
-        except:
-            pass
+        except shutil.RegistryError as err:
+            print(err)
 
         # Unpack the files
-        for file in p:
+        for file in filepath:
             shutil.unpack_archive(file, path, "gz")
 
     def name_files(self, prefix: str = "OASQuery") -> None:
         """
-        ## Renames the files in self.file_destination to a systematic name for csv reader to understand.
+        ## Renames the files in self.file_destination to a systematic name.
         ### Args: \n
-            \tprefix {str} -- Prefix for the systematic name. All file names will include this prefix with 01,02 etc.
+            \tprefix {str} -- Prefix for the systematic name.
+                            All file names will include this prefix with 01,02 etc.
         """
         # Get all the files contained in self.file_destination that have been extracted already
         files = [
@@ -307,7 +339,8 @@ class DownloadOAS:
         ), f"Cannot use sample if sample_size is {self.sample_size}. Value needs to be of type int."
         assert (
             self.files
-        ), "Please run make_union first. Cannot run sample without having grabbed the file names first."
+        ), "Please run make_union first. \
+        Cannot run sample without having grabbed the file names first."
         assert isinstance(
             self.sample_size, int
         ), f"sample_size needs to be of type int, currently type is {type(self.sample_size)}"
@@ -318,3 +351,13 @@ class DownloadOAS:
 
 if __name__ == "__main__":
     print("Called OAS Download as main. This does nothing.")
+    A = DownloadOAS(
+        file_destination=Path("./files/test"),
+        file_path=Path("../"),
+        search=(
+            ("Disease", "EBV"),
+            ("Disease", "Obstructive-Sleep-Apnea"),
+            ("Chain", "Light"),
+        ),
+    )
+    A()
