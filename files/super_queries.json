@@ -1,0 +1,113 @@
+{
+    "Disease": {
+        "Amyloidosis": [
+            "Light-Chain-Amyloidosis"
+        ],
+        "Viral": [
+            "SARS-COV-2",
+            "HIV",
+            "Ebola",
+            "HCV",
+            "CMV",
+            "EBV",
+            "CMV/EBV",
+            "Dengue"
+        ],
+        "Virus": [
+            "SARS-COV-2",
+            "HIV",
+            "Ebola",
+            "HCV",
+            "CMV",
+            "EBV",
+            "CMV/EBV",
+            "Dengue"
+        ],
+        "Rhinitis": [
+            "Allergic-Rhinitis-Out-Of-Season",
+            "Allergic-Rhinitis-In-Season"
+        ],
+        "Obstructive-Sleep-Apnea": [
+            "Obstructive-Sleep-Apnea",
+            "Tonsillitis/Obstructive-Sleep-Apnea"
+        ],
+        "Tonsillitis": [
+            "Tonsillitis",
+            "Tonsillitis/Obstructive-Sleep-Apnea"
+        ],
+        "Allergy": [
+            "Allergy/NoSIT",
+            "Allergy/SIT"
+        ],
+        "Autoimmune": [
+            "Allergy/NoSIT",
+            "Allergy/SIT",
+            "MS",
+            "SLE",
+            "MuSK-MG",
+            "AChR-MG"
+        ],
+        "Cancer": [
+            "POEMS"
+        ],
+        "Celiac": [
+            "Healthy/celiac-disease"
+        ]
+    },
+    "Vaccine": {
+        "Bacterial": [
+            "MenACWY-conjugate",
+            "MenACWY-polysaccharide",
+            "Tetanus",
+            "NP-CGG/Bacterial-Colonizaion",
+            "E.Coli/Lactobacillus/Clostridia"
+        ],
+        "Viral": [
+            "HIV",
+            "TIV",
+            "HepB",
+            "pH1N1-AS03",
+            "pH1N1",
+            "Flu",
+            "HepB/HepA/Flu",
+            "RSV",
+            "SARS-COV-2"
+        ],
+        "Virus": [
+            "HIV",
+            "TIV",
+            "HepB",
+            "pH1N1-AS03",
+            "pH1N1",
+            "Flu",
+            "HepB/HepA/Flu",
+            "RSV",
+            "SARS-COV-2"
+        ],
+        "Chicken": [
+            "OVA",
+            "NP-HEL"
+        ],
+        "Adjuvant": [
+            "NP-CGG"
+        ]
+    },
+    "BType": {
+        "Mature": [
+            "Memory-B-Cells",
+            "Plasmablast",
+            "Naive-B-Cells",
+            "Plasma-B-Cells",
+            "Plasmablast/Plasma-B-Cells",
+            "ASC",
+            "Naive-B-Cell/Plasmablast",
+            "Germlinal-Center-B-Cells"
+        ],
+        "Immature": [
+            "Pro-B-Cells",
+            "Pre-B-Cells",
+            "Immature-B-Cells",
+            "FO-Cells"
+        ]
+    }
+}
