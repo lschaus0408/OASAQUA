@@ -14,6 +14,8 @@ from typing import Iterable, cast
 from pathlib import Path
 import requests
 
+### ADD UPDATE FOR SUPER_QUERIES
+
 
 def update_query_check(
     path: Path = Path("./files"),
