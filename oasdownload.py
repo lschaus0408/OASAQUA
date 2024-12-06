@@ -1,12 +1,12 @@
 """ 
----------------------------------- Observed Antibody Space API -------------------------------------\n
+---------------------------------- Observed Antibody Space API -----------------------------------
 Module can download different datasets from the OAS and write them into a compressed file for local
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
-region. OAS is a database from the University of Oxford Dept. of Statistics (doi: 10.1002/pro.4205)\n
--------------------------------------- OAS Download Module -------------------------------------------\n
+region. OAS is a database from the University of Oxford Dept. of Statistics (doi:10.1002/pro.4205)
+-------------------------------------- OAS Download Module ---------------------------------------
 This module should download files from the OAS server. The user can provide keys for the queries and 
-the module will download all the files provided by that set of keys. The raw data files will be saved 
-in a temp folder with a naming structure that is recognized by the csvreader module.\n
+the module will download all the files provided by that set of keys. The raw data files will be 
+saved in a temp folder with a naming structure that is recognized by the csvreader module.
 """
 
 import shutil
@@ -31,6 +31,8 @@ from helper_functions import gunzip
 
 
 class EmptyRequestWarning(Warning):
+    """Warning for Empty HTTP Request"""
+
     def __init__(self, message):
         self.message = message
 
@@ -54,11 +56,15 @@ class DownloadOAS:
     def __init__(
         self,
         file_destination: Path,
-        file_path: Path = Path(""),
+        paired: bool,
+        query_check_file_path: Path = Path("./files/query_check_dictionary.json"),
+        super_query_file_path: Path = Path("./files/super_queries.json"),
         search: Optional[tuple[tuple[str, str]]] = None,
         sample_size: Union[None, int] = None,
     ):
-        self.file_path = file_path
+        self.query_check_file_path = query_check_file_path
+        self.super_query_file_path = super_query_file_path
+        self.paired = paired
         self.search = search
         self.files = []
         self.file_destination = file_destination
@@ -68,10 +74,17 @@ class DownloadOAS:
             self.file_destination.mkdir()
 
         # ### CHANGE THIS FOR CONNECTION REQUEST
-        # assert self.file_path.is_file(), f"File {self.file_path} not found."
+        assert (
+            self.query_check_file_path.is_file()
+        ), f"File {self.query_check_file_path} not found."
+        assert (
+            self.super_query_file_path.is_file()
+        ), f"File {self.super_query_file_path} not found"
 
-        # with open(self.file_path, "r", encoding="utf-8") as infile:
-        #     self.dictionary = json.load(infile)
+        with open(self.query_check_file_path, "r", encoding="utf-8") as infile:
+            self.dictionary = json.load(infile)
+        with open(self.super_query_file_path, "r", encoding="utf-8") as infile:
+            self.super_queries = json.load(infile)
 
     def __call__(self):
         """
@@ -113,20 +126,25 @@ class DownloadOAS:
         ### Updates: \n
             \tself.files
         """
+        if self.paired:
+            request_url = "https://opig.stats.ox.ac.uk/webapps/oas/oas_paired/"
+        else:
+            request_url = "https://opig.stats.ox.ac.uk/webapps/oas/oas_unpaired/"
 
         if self.search is None:
             raise TypeError("Please set the search terms before using OASDownload.")
 
         queries = self._create_queries()
-
+        print(queries)
         combined_urls = set()
         # Process each query individually
         for query in queries:
             req = requests.post(
-                "https://opig.stats.ox.ac.uk/webapps/oas/oas_unpaired/",
+                request_url,
                 data=query,
                 timeout=1,
             )
+            # Narrow-down where in the page the URLs are
             page_text = req.text
             start_index = page_text.find("var CSV = [")
             end_index = page_text.find("].join")
@@ -135,17 +153,20 @@ class DownloadOAS:
             # Warn if the URL list is empty
             if not urls:
                 warnings.warn(
-                    f"Query: {query} resulted in an empty request! Please check if the query was valid.",
+                    f"Query: {query} resulted in an empty request! \
+                    Please check if the query was valid.",
                     EmptyRequestWarning,
                 )
             combined_urls.update(urls)
-
         self.files = combined_urls
 
     def _create_queries(self):
         """
         ## Creates Queries from parsed user-queries
         """
+        # Get super queries
+        self.search = self._split_super_queries(self.search)
+
         queries_list = []
         for pair in self.search:
             # Make sure a category is actually passed
@@ -185,6 +206,19 @@ class DownloadOAS:
                     for query in queries_list:
                         query[pair[0]] = value
         return queries_list
+
+    def _split_super_queries(self, search: tuple[tuple[str, str]]):
+        """
+        ## Splits super queries into individual queries
+        """
+        search: list = list(search)
+        for item in search:
+            if item[0] in self.super_queries:
+                if item[1] in self.super_queries[item[0]]:
+                    for entry in self.super_queries[item[0]][item[1]]:
+                        search.append((item[0], entry))
+                    search.remove((item[0], item[1]))
+        return tuple(search)
 
     @staticmethod
     def _extract_urls(raw_requests: str):
@@ -295,7 +329,7 @@ class DownloadOAS:
         # Iterate over files and rename
         i = 1
         for file in files:
-            # Above file list will rename if anything is a non csv.gz file, which is a bug. This is a quick fix
+            # Above file list will rename if anything is a non csv.gz file, which is a bug
             if ".csv" in file and "OAS" not in file:
                 # zfill(5) just adds leading zeros up to 5 digits
                 suffix = str(i).zfill(5)
@@ -351,13 +385,3 @@ class DownloadOAS:
 
 if __name__ == "__main__":
     print("Called OAS Download as main. This does nothing.")
-    A = DownloadOAS(
-        file_destination=Path("./files/test"),
-        file_path=Path("../"),
-        search=(
-            ("Disease", "EBV"),
-            ("Disease", "Obstructive-Sleep-Apnea"),
-            ("Chain", "Light"),
-        ),
-    )
-    A()
