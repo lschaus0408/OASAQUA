@@ -135,7 +135,6 @@ class DownloadOAS:
             raise TypeError("Please set the search terms before using OASDownload.")
 
         queries = self._create_queries()
-        print(queries)
         combined_urls = set()
         # Process each query individually
         for query in queries:
