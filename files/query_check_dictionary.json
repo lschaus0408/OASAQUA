@@ -1,1 +1,217 @@
-{"unpaired": {"Species": ["*", "rabbit", "human", "mouse_C57BL/6", "rhesus", "mouse_BALB/c", "mouse", "camel", "Kymouse", "rat", "HIS-Mouse", "mouse_RAG2-GFP/129Sve", "mouse_Swiss-Webster"], "BSource": ["*", "Spleen", "PBMC", "Bone-Marrow", "LeukoPak", "Spleen/Bone-Marrow", "Tonsillectomy", "Nasal-Biopsy", "Biopsy-Small-Intestine", "Ileum", "Colon", "Jejunum", "Lung", "Mesenteric-Lymph-Node", "Nasopharyngeal-Swab", "Biopsy", "Cerebrospinal-Fluid", "Peritoneal-Cavity", "Cervical-Lymph-Node", "Brain-Lesion", "Pia-Mater", "Choroid-Plexus", "Cortex", "Lymph", "Cord-Blood-Cells", "Lamina-Propria", "PBMC/Nasal-Biopsy"], "BType": ["*", "Unsorted-B-Cells", "Pro-B-Cells", "Memory-B-Cells", "Plasmablast", "RV+B-Cells", "Naive-B-Cells", "Plasma-B-Cells", "Plasmablast/Plasma-B-Cells", "ASC", "Pre-B-Cells", "Naive-B-Cell/Plasmablast", "Germlinal-Center-B-Cells", "Immature-B-Cells", "B-1a-Cells", "B-1b-Cells", "B-2-Cells", "MZ-Cells", "FO-Cells"], "Longitudinal": ["*", "defined", "undefined"], "Age": ["*", "defined", "undefined"], "Disease": ["*", "None", "CLL", "POEMS", "SARS-COV-2", "HIV", "Light-Chain-Amyloidosis", "Ebola", "HCV", "Healthy/celiac-disease", "CMV", "Tonsillitis", "Obstructive-Sleep-Apnea", "Tonsillitis/Obstructive-Sleep-Apnea", "Allergy/NoSIT", "Allergy/SIT", "EBV", "CMV/EBV", "Asthma", "MS", "Dengue", "Non-Dengue-Febrile-Illness", "SLE", "MuSK-MG", "AChR-MG", "Allergic-Rhinitis-Out-Of-Season", "Allergic-Rhinitis-In-Season"], "Subject": ["*", "defined", "undefined"], "Vaccine": ["*", "HIV", "None", "NP-CGG", "TIV", "Plasmodium", "MenACWY-conjugate", "MenACWY-polysaccharide", "HepB", "pH1N1-AS03", "pH1N1", "NP-HEL", "OVA", "Flu", "HepB/HepA/Flu", "Tetanus/Flu", "E.Coli/Lactobacillus/Clostridia", "RSV", "Tetanus", "SARS-COV-2", "HuD", "DNP", "Sheep-erythrocytes", "NP-CGG/Bacterial-Colonizaion"], "Chain": ["*", "Heavy", "Light"], "Isotype": ["*", "Bulk", "IGHA", "IGHG", "IGHM", "IGHD", "IGHE"]}, "paired": {"Species": ["*", "mouse_C57BL/6", "human", "mouse_BALB/c", "rat_SD"], "Age": ["*", "defined", "undefined"], "BSource": ["*", "Lymph", "PBMC", "Tonsillectomy", "caecum", "transverse-colon", "sigmoid-colon", "mesenteric-lymph-node", "CSF"], "BType": ["*", "Plasmablast", "RV+B-Cells", "Unsorted-B-Cells", "Naive-B-Cells", "Memory-B-Cells", "ASC", "Plasma-B-Cells", "Plasmablast/Plasma-B-Cells", "CD27-memory-and-Plasmablast/Plasma-B-Cells", "double-nagative-B-cells"], "Vaccine": ["*", "None", "OVA"], "Disease": ["*", "SARS-COV-2", "None", "CMV", "Obstructive-Sleep-Apnea", "Tonsillitis", "Tonsillitis/Obstructive-Sleep-Apnea", "HIV", "Multiple-sclerosis"], "Subject": ["*", "defined", "undefined"], "Longitudinal": ["*", "defined", "undefined"]}}
+{
+    "unpaired": {
+        "Species": [
+            "*",
+            "rabbit",
+            "human",
+            "mouse_C57BL/6",
+            "rhesus",
+            "mouse_BALB/c",
+            "mouse",
+            "camel",
+            "Kymouse",
+            "rat",
+            "HIS-Mouse",
+            "mouse_RAG2-GFP/129Sve",
+            "mouse_Swiss-Webster"
+        ],
+        "BSource": [
+            "*",
+            "Spleen",
+            "PBMC",
+            "Bone-Marrow",
+            "LeukoPak",
+            "Spleen/Bone-Marrow",
+            "Tonsillectomy",
+            "Nasal-Biopsy",
+            "Biopsy-Small-Intestine",
+            "Ileum",
+            "Colon",
+            "Jejunum",
+            "Lung",
+            "Mesenteric-Lymph-Node",
+            "Nasopharyngeal-Swab",
+            "Biopsy",
+            "Cerebrospinal-Fluid",
+            "Peritoneal-Cavity",
+            "Cervical-Lymph-Node",
+            "Brain-Lesion",
+            "Pia-Mater",
+            "Choroid-Plexus",
+            "Cortex",
+            "Lymph",
+            "Cord-Blood-Cells",
+            "Lamina-Propria",
+            "PBMC/Nasal-Biopsy"
+        ],
+        "BType": [
+            "*",
+            "Unsorted-B-Cells",
+            "Pro-B-Cells",
+            "Memory-B-Cells",
+            "Plasmablast",
+            "RV+B-Cells",
+            "Naive-B-Cells",
+            "Plasma-B-Cells",
+            "Plasmablast/Plasma-B-Cells",
+            "ASC",
+            "Pre-B-Cells",
+            "Naive-B-Cell/Plasmablast",
+            "Germlinal-Center-B-Cells",
+            "Immature-B-Cells",
+            "B-1a-Cells",
+            "B-1b-Cells",
+            "B-2-Cells",
+            "MZ-Cells",
+            "FO-Cells"
+        ],
+        "Longitudinal": [
+            "*",
+            "defined",
+            "undefined"
+        ],
+        "Age": [
+            "*",
+            "defined",
+            "undefined"
+        ],
+        "Disease": [
+            "*",
+            "None",
+            "CLL",
+            "POEMS",
+            "SARS-COV-2",
+            "HIV",
+            "Light-Chain-Amyloidosis",
+            "Ebola",
+            "HCV",
+            "Healthy/celiac-disease",
+            "CMV",
+            "Tonsillitis",
+            "Obstructive-Sleep-Apnea",
+            "Tonsillitis/Obstructive-Sleep-Apnea",
+            "Allergy/NoSIT",
+            "Allergy/SIT",
+            "EBV",
+            "CMV/EBV",
+            "Asthma",
+            "MS",
+            "Dengue",
+            "Non-Dengue-Febrile-Illness",
+            "SLE",
+            "MuSK-MG",
+            "AChR-MG",
+            "Allergic-Rhinitis-Out-Of-Season",
+            "Allergic-Rhinitis-In-Season"
+        ],
+        "Subject": [
+            "*",
+            "defined",
+            "undefined"
+        ],
+        "Vaccine": [
+            "*",
+            "HIV",
+            "None",
+            "NP-CGG",
+            "TIV",
+            "Plasmodium",
+            "MenACWY-conjugate",
+            "MenACWY-polysaccharide",
+            "HepB",
+            "pH1N1-AS03",
+            "pH1N1",
+            "NP-HEL",
+            "OVA",
+            "Flu",
+            "HepB/HepA/Flu",
+            "Tetanus/Flu",
+            "E.Coli/Lactobacillus/Clostridia",
+            "RSV",
+            "Tetanus",
+            "SARS-COV-2",
+            "HuD",
+            "DNP",
+            "Sheep-erythrocytes",
+            "NP-CGG/Bacterial-Colonizaion"
+        ],
+        "Chain": [
+            "*",
+            "Heavy",
+            "Light"
+        ],
+        "Isotype": [
+            "*",
+            "Bulk",
+            "IGHA",
+            "IGHG",
+            "IGHM",
+            "IGHD",
+            "IGHE"
+        ]
+    },
+    "paired": {
+        "Species": [
+            "*",
+            "mouse_C57BL/6",
+            "human",
+            "mouse_BALB/c",
+            "rat_SD"
+        ],
+        "Age": [
+            "*",
+            "defined",
+            "undefined"
+        ],
+        "BSource": [
+            "*",
+            "Lymph",
+            "PBMC",
+            "Tonsillectomy",
+            "caecum",
+            "transverse-colon",
+            "sigmoid-colon",
+            "mesenteric-lymph-node",
+            "CSF"
+        ],
+        "BType": [
+            "*",
+            "Plasmablast",
+            "RV+B-Cells",
+            "Unsorted-B-Cells",
+            "Naive-B-Cells",
+            "Memory-B-Cells",
+            "ASC",
+            "Plasma-B-Cells",
+            "Plasmablast/Plasma-B-Cells",
+            "CD27-memory-and-Plasmablast/Plasma-B-Cells",
+            "double-nagative-B-cells"
+        ],
+        "Vaccine": [
+            "*",
+            "None",
+            "OVA"
+        ],
+        "Disease": [
+            "*",
+            "SARS-COV-2",
+            "None",
+            "CMV",
+            "Obstructive-Sleep-Apnea",
+            "Tonsillitis",
+            "Tonsillitis/Obstructive-Sleep-Apnea",
+            "HIV",
+            "Multiple-sclerosis"
+        ],
+        "Subject": [
+            "*",
+            "defined",
+            "undefined"
+        ],
+        "Longitudinal": [
+            "*",
+            "defined",
+            "undefined"
+        ]
+    }
+}
