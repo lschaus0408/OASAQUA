@@ -18,11 +18,11 @@ from typing import Callable, Literal, Optional
 
 from tqdm import tqdm
 
-from csvreader import CSVReader
-from filemanager import FileManager
-from helper_functions import check_query
-from oasdownload import DownloadOAS
-from post_processing import PostProcessor
+from modules.reader import CSVReader
+from modules.filemanager import FileManager
+from modules.helper_functions import check_query
+from modules.oasdownload import DownloadOAS
+from postprocessing.post_processing import PostProcessor
 
 CATEGORY = Literal[
     "Chain",
