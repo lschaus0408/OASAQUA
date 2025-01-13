@@ -72,6 +72,7 @@ def argparse_list_type(argument: str) -> list:
 def oas_parser() -> ArgumentParser:
     """
     ## Parser for OASCS
+    --> TO DO: Finish Docstrings, add postprocessing to parser
     """
     parser = ArgumentParser(
         prog="OAS API",
@@ -131,7 +132,4 @@ def oas_parser() -> ArgumentParser:
 
 
 if __name__ == "__main__":
-    ARG = "((Chain, Light, Heavy), (Disease, CMV), (BType, Memory, FO+))"
-    ARG_DICT = "{Chain: [Light, Heavy], Disease: CMV, BType: [Memory, FO+]}"
-    print(argparse_dict_type(ARG_DICT))
-    # print(argparse_tuple_type(ARG))
+    print("This is the OAS Parser!")
