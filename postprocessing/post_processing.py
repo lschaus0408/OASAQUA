@@ -1,16 +1,17 @@
 """
----------------------------------- Observed Antibody Space API -------------------------------------\n
+---------------------------------- Observed Antibody Space API -----------------------------------\n
 Module can download different datasets from the OAS and write them into a compressed file for local
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
-region. OAS is a database from the University of Oxford Dept. of Statistics (doi: 10.1002/pro.4205)\n
----------------------------------------- Post Processing --------------------------------------------\n
+region. OAS is a database from the University of Oxford Dept. of Statistics(doi: 10.1002/pro.4205)\n
+---------------------------------------- Post Processing -----------------------------------------\n
 This module contains the post-processing tools for OAS API. Examples: Delete ambiguous sequences, 
 reconstruct sequences, cluster sequences + sample etc.\n
 """
 
-
-# Abstract Base Class for the module
+from pathlib import Path
 from abc import ABC, abstractmethod
+
+import pandas as pd
 
 DTYPE_DICT = {
     "sequence": "string",
@@ -82,12 +83,6 @@ DTYPE_DICT = {
     "d_sequence_end": "Int16",
     "j_sequence_start": "Int16",
     "j_sequence_end": "Int16",
-    "v_alignment_start": "Int16",
-    "v_alignment_end": "Int16",
-    "d_alignment_start": "Int16",
-    "d_alignment_end": "Int16",
-    "j_alignment_start": "Int16",
-    "j_alignment_end": "Float32",
     "fwr1_start": "Float32",
     "fwr1_end": "Float32",
     "fwr2_start": "Int16",
@@ -130,26 +125,26 @@ DTYPE_DICT = {
 }
 
 
-
 class PostProcessor(ABC):
+    """
+    ### OASCS Postprocessor Class
+    FINISH DOCTSTRINGS
+    """
 
     @abstractmethod
-    def load_file(self):
+    def load_file(self, file_path: Path, overwrite: bool = False):
         """
         ## Method to load the files into the post processing tool.
         """
-        pass
 
     @abstractmethod
-    def save_file(self):
+    def save_file(self, file_path: Path, data: pd.DataFrame):
         """
         ## Method to save the file.
         """
-        pass
 
     @abstractmethod
     def process(self):
         """
         ## Process file according to the processor.
         """
-        pass

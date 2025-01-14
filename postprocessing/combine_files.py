@@ -1,152 +1,39 @@
 """
----------------------------------- Observed Antibody Space API -------------------------------------\n
+---------------------------------- Observed Antibody Space API -----------------------------------\n
 Module can download different datasets from the OAS and write them into a compressed file for local
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
-region. OAS is a database from the University of Oxford Dept. of Statistics (doi: 10.1002/pro.4205)\n
----------------------------------- Combine Files Post Processing -----------------------------------\n
+region. OAS is a database from the University of Oxford Dept. of Statistics(doi: 10.1002/pro.4205)\n
+---------------------------------- Combine Files Post Processing ---------------------------------\n
 This module is used to combine files from OAS API to all have a similar size. This is important to 
 be able to reliably use the antibody viability module. If the files for that module are too small,
 the sample to figure out the mutation rate is too small making filtering noisy. If the file is too
-big, antibody viability might crash due to lacking memory to process everything. If the files are 
-all approximately the same size, the antibody viability module can always be run with the same number
-of CPUs and batch sizes. This can also be used to package data into desired data chunks for model training.\n
+big, antibody viability might crash due to lacking memory to process everything. If the files 
+are all approximately the same size, the antibody viability module can always be run with 
+the same number of CPUs and batch sizes. 
+This can also be used to package data into desired data chunks for model training.\n
 """
-from OAS_API.post_processing import PostProcessor
-from pathlib import Path
-from tqdm import tqdm
 
 import math
 import warnings
 
+from pathlib import Path
+
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
-DTYPE_DICT = {
-    "sequence": "string",
-    "locus": "category",
-    "stop_codon": "category",
-    "vj_in_frame": "category",
-    "v_frameshift": "category",
-    "productive": "category",
-    "rev_comp": "category",
-    "complete_vdj": "category",
-    "v_call": "category",
-    "d_call": "category",
-    "j_call": "category",
-    "sequence_alignment": "string",
-    "germline_alignment": "string",
-    "sequence_alignment_aa": "string",
-    "germline_alignment_aa": "string",
-    "v_alignment_start": "Int16",
-    "v_alignment_end": "Int16",
-    "d_alignment_start": "Int16",
-    "d_alignment_end": "Int16",
-    "j_alignment_start": "Int16",
-    "j_alignment_end": "Int16",
-    "v_sequence_alignment": "string",
-    "v_sequence_alignment_aa": "string",
-    "v_germline_alignment": "string",
-    "v_germline_alignment_aa": "string",
-    "d_sequence_alignment": "string",
-    "d_sequence_alignment_aa": "string",
-    "d_germline_alignment": "string",
-    "d_germline_alignment_aa": "string",
-    "j_sequence_alignment": "string",
-    "j_sequence_alignment_aa": "string",
-    "j_germline_alignment": "string",
-    "j_germline_alignment_aa": "string",
-    "fwr1": "string",
-    "fwr1_aa": "string",
-    "fwr2": "string",
-    "fwr2_aa": "string",
-    "fwr3": "string",
-    "fwr3_aa": "string",
-    "fwr4": "string",
-    "fwr4_aa": "string",
-    "cdr1": "string",
-    "cdr1_aa": "string",
-    "cdr2": "string",
-    "cdr2_aa": "string",
-    "cdr3": "string",
-    "cdr3_aa": "string",
-    "junction": "string",
-    "junction_aa": "string",
-    "junction_length": "Int16",
-    "junction_aa_length": "Int16",
-    "v_score": "Float32",
-    "d_score": "Float32",
-    "j_score": "Float32",
-    "v_cigar": "category",
-    "d_cigar": "category",
-    "j_cigar": "category",
-    "v_support": "Float32",
-    "d_support": "Float32",
-    "j_support": "Float32",
-    "v_identity": "Float32",
-    "d_identity": "Float32",
-    "j_identity": "Float32",
-    "v_sequence_start": "Int16",
-    "v_sequence_end": "Int16",
-    "d_sequence_start": "Int16",
-    "d_sequence_end": "Int16",
-    "j_sequence_start": "Int16",
-    "j_sequence_end": "Int16",
-    "v_alignment_start": "Int16",
-    "v_alignment_end": "Int16",
-    "d_alignment_start": "Int16",
-    "d_alignment_end": "Int16",
-    "j_alignment_start": "Int16",
-    "j_alignment_end": "Float32",
-    "fwr1_start": "Float32",
-    "fwr1_end": "Float32",
-    "fwr2_start": "Int16",
-    "fwr2_end": "Int16",
-    "fwr3_start": "Int16",
-    "fwr3_end": "Int16",
-    "fwr4_start": "Int16",
-    "fwr4_end": "Int16",
-    "cdr1_start": "Int16",
-    "cdr1_end": "Int16",
-    "cdr2_start": "Int16",
-    "cdr2_end": "Int16",
-    "cdr3_start": "Int16",
-    "cdr3_end": "Int16",
-    "np1": "string",
-    "np1_length": "Int16",
-    "np2": "string",
-    "np2_length": "Int16",
-    "c_region": "string",
-    "Redundancy": "category",
-    "ANARCI_numbering": "string",
-    "ANARCI_status": "string",
-    "Run": "category",
-    "Link": "category",
-    "Author": "category",
-    "Species": "category",
-    "BSource": "category",
-    "BType": "category",
-    "Age": "category",
-    "Longitudinal": "category",
-    "Vaccine": "category",
-    "Disease": "category",
-    "Subject": "category",
-    "Chain": "category",
-    "Unique sequences": "Int16",
-    "Isotype": "category",
-    "Total sequences": "Int16",
-    "Sequence_aa": "string",
-    "Sequence_dna": "string",
-}
+from postprocessing.post_processing import PostProcessor, DTYPE_DICT
+
 
 class CombineFiles(PostProcessor):
     """
     ## Combine OAS API Files
-    This module is used to combine files from OAS API to all have a similar size. This is important to
-    be able to reliably use the antibody viability module. If the files for that module are too small,
-    the sample to figure out the mutation rate is too small making filtering noisy. If the file is too
-    big, antibody viability might crash due to lacking memory to process everything. If the files are
-    all approximately the same size, the antibody viability module can always be run with the same number
-    of CPUs and batch sizes.
+    This module is used to combine files from OAS API to all have a similar size. This is important
+    to be able to reliably use the antibody viability module.
+    If the files for that module are too small, the sample to figure out the mutation rate is too
+    small making filtering noisy. If the file is too big, antibody viability might crash due to
+    lacking memory to process everything. If the files are all approximately the same size,
+    the antibody viability module can always be run with the same number of CPUs and batch sizes.
     ### Args:
         \t directory {Path} -- Path to the directory to be processsed
         \t output_filename_prefix {str} -- Desired name for the output files
@@ -168,10 +55,10 @@ class CombineFiles(PostProcessor):
         self.split_trigger = 0
         self._fileindex = 0
 
-    def save_file(self, data: pd.DataFrame):
-        data.to_csv(path_or_buf=self._get_file_name())
+    def save_file(self, file_path: Path, data: pd.DataFrame):
+        data.to_csv(path_or_buf=file_path)
 
-    def load_file(self, file_path: Path) -> pd.DataFrame:
+    def load_file(self, file_path: Path, overwrite: bool = False) -> pd.DataFrame:
         """
         ## Returns file at file_path as a dataframe
         """
@@ -235,7 +122,8 @@ class CombineFiles(PostProcessor):
                 warnings.simplefilter(action="ignore", category=FutureWarning)
                 chunked_large_data = np.array_split(other_data, split_floor)
             for chunk in chunked_large_data:
-                self.save_file(chunk)
+                current_file_path = self._get_file_name()
+                self.save_file(current_file_path, chunk)
 
         # Save whatever is left over in split data
         if self.split_data:
@@ -259,21 +147,24 @@ class CombineFiles(PostProcessor):
                 with warnings.catch_warnings():
                     warnings.simplefilter(action="ignore", category=FutureWarning)
                     merged_data = pd.concat(small_file_list)
-                self.save_file(merged_data)
+                current_file_path = self._get_file_name()
+                self.save_file(current_file_path, merged_data)
                 small_file_list = []
                 small_file_sizes = 0
 
         # Clean up whatever is left in the file list
         if small_file_list:
             merged_data = pd.concat(small_file_list)
-            self.save_file(merged_data)
+            current_file_path = self._get_file_name()
+            self.save_file(current_file_path, merged_data)
 
     def process_split_data(self):
         """
         ## Processes data currently in self.split_data
         """
         merged_data = pd.concat(self.split_data)
-        self.save_file(merged_data)
+        current_file_path = self._get_file_name()
+        self.save_file(current_file_path, merged_data)
         self.split_data = []
 
     def sort_files(self, list_of_files: list[Path]):
@@ -297,8 +188,8 @@ class CombineFiles(PostProcessor):
 
 
 if __name__ == "__main__":
-    directory = Path("/home/lschaus/vscode/data/OAS_API_Processed/")
+    directory_test = Path("/home/lschaus/vscode/data/OAS_API_Processed/")
     A = CombineFiles(
-        directory=directory, output_filename_prefix="OAS_Combined_Files_3"
+        directory=directory_test, output_filename_prefix="OAS_Combined_Files_3"
     )
     A.process()

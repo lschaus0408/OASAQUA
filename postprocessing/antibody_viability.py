@@ -1,146 +1,31 @@
 """
----------------------------------- Observed Antibody Space API -------------------------------------\n
+---------------------------------- Observed Antibody Space API -----------------------------------\n
 Module can download different datasets from the OAS and write them into a compressed file for local
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
-region. OAS is a database from the University of Oxford Dept. of Statistics (doi: 10.1002/pro.4205)\n
--------------------------------- Antibody Viability Post Processing --------------------------------\n
+region. OAS is a database from the University of Oxford Dept. of Statistics(doi: 10.1002/pro.4205)\n
+-------------------------------- Antibody Viability Post Processing ------------------------------\n
 Performs post processing in OAS API. Checks antibody viability inspired by ABOSS:
 doi: https://doi.org/10.4049%2Fjimmunol.1800669
 """
 
-from OAS_API.post_processing import PostProcessor
+import math
 
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Union, Optional, Literal
-from anarci import anarci
-from tqdm import tqdm
 from collections import defaultdict, Counter
 from itertools import chain as iter_chain
 from functools import partial
 from multiprocessing import Pool
 
+from anarci import anarci
+from tqdm import tqdm
+
 import pandas as pd
 import numpy as np
 
-import math
+from postprocessing.post_processing import PostProcessor, DTYPE_DICT
 
-DTYPE_DICT = {
-    "sequence": "string",
-    "locus": "category",
-    "stop_codon": "category",
-    "vj_in_frame": "category",
-    "v_frameshift": "category",
-    "productive": "category",
-    "rev_comp": "category",
-    "complete_vdj": "category",
-    "v_call": "category",
-    "d_call": "category",
-    "j_call": "category",
-    "sequence_alignment": "string",
-    "germline_alignment": "string",
-    "sequence_alignment_aa": "string",
-    "germline_alignment_aa": "string",
-    "v_alignment_start": "Int16",
-    "v_alignment_end": "Int16",
-    "d_alignment_start": "Int16",
-    "d_alignment_end": "Int16",
-    "j_alignment_start": "Int16",
-    "j_alignment_end": "Int16",
-    "v_sequence_alignment": "string",
-    "v_sequence_alignment_aa": "string",
-    "v_germline_alignment": "string",
-    "v_germline_alignment_aa": "string",
-    "d_sequence_alignment": "string",
-    "d_sequence_alignment_aa": "string",
-    "d_germline_alignment": "string",
-    "d_germline_alignment_aa": "string",
-    "j_sequence_alignment": "string",
-    "j_sequence_alignment_aa": "string",
-    "j_germline_alignment": "string",
-    "j_germline_alignment_aa": "string",
-    "fwr1": "string",
-    "fwr1_aa": "string",
-    "fwr2": "string",
-    "fwr2_aa": "string",
-    "fwr3": "string",
-    "fwr3_aa": "string",
-    "fwr4": "string",
-    "fwr4_aa": "string",
-    "cdr1": "string",
-    "cdr1_aa": "string",
-    "cdr2": "string",
-    "cdr2_aa": "string",
-    "cdr3": "string",
-    "cdr3_aa": "string",
-    "junction": "string",
-    "junction_aa": "string",
-    "junction_length": "Int16",
-    "junction_aa_length": "Int16",
-    "v_score": "Float32",
-    "d_score": "Float32",
-    "j_score": "Float32",
-    "v_cigar": "category",
-    "d_cigar": "category",
-    "j_cigar": "category",
-    "v_support": "Float32",
-    "d_support": "Float32",
-    "j_support": "Float32",
-    "v_identity": "Float32",
-    "d_identity": "Float32",
-    "j_identity": "Float32",
-    "v_sequence_start": "Int16",
-    "v_sequence_end": "Int16",
-    "d_sequence_start": "Int16",
-    "d_sequence_end": "Int16",
-    "j_sequence_start": "Int16",
-    "j_sequence_end": "Int16",
-    "v_alignment_start": "Int16",
-    "v_alignment_end": "Int16",
-    "d_alignment_start": "Int16",
-    "d_alignment_end": "Int16",
-    "j_alignment_start": "Int16",
-    "j_alignment_end": "Float32",
-    "fwr1_start": "Float32",
-    "fwr1_end": "Float32",
-    "fwr2_start": "Int16",
-    "fwr2_end": "Int16",
-    "fwr3_start": "Int16",
-    "fwr3_end": "Int16",
-    "fwr4_start": "Int16",
-    "fwr4_end": "Int16",
-    "cdr1_start": "Int16",
-    "cdr1_end": "Int16",
-    "cdr2_start": "Int16",
-    "cdr2_end": "Int16",
-    "cdr3_start": "Int16",
-    "cdr3_end": "Int16",
-    "np1": "string",
-    "np1_length": "Int16",
-    "np2": "string",
-    "np2_length": "Int16",
-    "c_region": "string",
-    "Redundancy": "category",
-    "ANARCI_numbering": "string",
-    "ANARCI_status": "string",
-    "Run": "category",
-    "Link": "category",
-    "Author": "category",
-    "Species": "category",
-    "BSource": "category",
-    "BType": "category",
-    "Age": "category",
-    "Longitudinal": "category",
-    "Vaccine": "category",
-    "Disease": "category",
-    "Subject": "category",
-    "Chain": "category",
-    "Unique sequences": "Int16",
-    "Isotype": "category",
-    "Total sequences": "Int16",
-    "Sequence_aa": "string",
-    "Sequence_dna": "string",
-}
 
 @dataclass
 class SequenceTracker:
@@ -156,12 +41,12 @@ class SequenceTracker:
         assert isinstance(self.sequences, list) and isinstance(
             self.sequences[0], tuple
         ), "Sequences attribute provided needs to be of type list[tuple[str, str]]"
-        # Make more memory efficient and faster, the lenght of the sequences attribute is now immutable
+        # Make more memory efficient, the length of the sequences attribute is now immutable
         self.sequences = np.array(self.sequences)
         if self.status is None:
             self.status = {}
-            for id, _ in self.sequences:
-                self.status[id] = True
+            for identity, _ in self.sequences:
+                self.status[identity] = True
 
         self.deleted = []
 
@@ -176,8 +61,8 @@ class SequenceTracker:
         """
         ## Stores sequences if their status is false
         """
-        for id, sequence in self.sequences:
-            if not self.status[id]:
+        for identity, sequence in self.sequences:
+            if not self.status[identity]:
                 self.deleted.append(sequence)
 
 
@@ -195,10 +80,12 @@ class AntibodyViability(PostProcessor):
                 data, pd.DataFrame
             ), "Data needs to be a pandas DataFrame."
         self.data = data
+        self.path: Optional[Path] = None
+        self.tracker: Optional[SequenceTracker] = None
 
-    def load_file(self, path: Path, overwrite: bool = False):
+    def load_file(self, file_path: Path, overwrite: bool = False):
         """
-        ## Loads OAS API file provided
+        ## Loads OAS CS file provided
         ### Args:
                 \t path {Path} -- Path to file \n
                 \t overwrite {bool} -- Whether or not to overwrite an already loaded file
@@ -210,20 +97,23 @@ class AntibodyViability(PostProcessor):
                 self.data is None
             ), "File has already been loaded, set overwrite to True"
             self.data = pd.read_csv(
-                path, index_col=0, dtype=DTYPE_DICT, usecols=["Chain", "Sequence_aa"]
+                file_path,
+                index_col=0,
+                dtype=DTYPE_DICT,
+                usecols=["Chain", "Sequence_aa"],
             )
         else:
             self.data = pd.read_csv(
-                path, index_col=0, dtype=DTYPE_DICT, usecols=["Sequence_aa"]
+                file_path, index_col=0, dtype=DTYPE_DICT, usecols=["Sequence_aa"]
             )
 
-        self.path = path
+        self.path = file_path
 
-    def save_file(self, path: Path):
+    def save_file(self, file_path: Path, data: pd.DataFrame):
         """
         ## Saves processed file as OAS API file
         """
-        self.data.to_csv(path)
+        data.to_csv(file_path)
 
     def update_data(self):
         """
@@ -253,9 +143,11 @@ class AntibodyViability(PostProcessor):
         in a batch of data through conserved residues. Only non-abnormal
         frequency residue sequences are kept.
         ### Args:
-                \tbatch_size {int or "dynamic"} -- Number of sequences to process in a batch. Recommended >= 1000. Dynamic sets batch size optimally on a per-file basis. \n
+                \tbatch_size {int or "dynamic"} -- Number of sequences to process in a batch.
+                Recommended >= 1000. Dynamic sets batch size optimally on a per-file basis. \n
                 \tncpus {int} -- Number of cpus to process with \n
-                \tmax_batch_size {int} -- Only used in dynamic mode. Sets upper bound on batch size to not overload memory.
+                \tmax_batch_size {int} -- Only used in dynamic mode.
+                Sets upper bound on batch size to not overload memory.
         ### Updates:
                 \tself.data {DataFrame} -- Dataframe containing filtered sequences
         """
@@ -300,8 +192,10 @@ class AntibodyViability(PostProcessor):
         ## Processes one batch of data
         First runs anarci, then checks if sequences could not be parsed by anarci.
         Next, the sequence is checked whether it aligns well to its designated germline.
-        Next, the sequence is checked for issues with it on a per-position basis, as well as checking the lengths of the different frames.
-        Lastly, the false-read rate is inferred and every mutation that occurs less often than the false read-rate is rejected.
+        Next, the sequence is checked for issues with it on a per-position basis,
+        as well as checking the lengths of the different frames.
+        Lastly, the false-read rate is inferred and
+        every mutation that occurs less often than the false read-rate is rejected.
         ### Args:
             \t batch {list} -- Batch of data in the anarci desired format
         """
@@ -346,7 +240,9 @@ class AntibodyViability(PostProcessor):
         else:
             false_read_position_23 = 0
         if len(conserved_104) != 0:
-            false_read_position_104 = 1 - (conserved_104.count(True) / len(conserved_104))
+            false_read_position_104 = 1 - (
+                conserved_104.count(True) / len(conserved_104)
+            )
         else:
             false_read_position_104 = 0
         # Get false read probability (i.e. sequencing error as opposed to mutation)
@@ -389,7 +285,7 @@ class AntibodyViability(PostProcessor):
         """
         ## Filters residues based on their per-residue probabilities
         """
-        # Go through each position (Due to the odd structure of numbered_sequence the positions are at [0][0])
+        # Go through each position (Due to the structure the positions are at [0][0])
         for position in numbered_sequence[0][0]:
             if position[1] == "-":
                 continue
@@ -423,16 +319,16 @@ class AntibodyViability(PostProcessor):
         merged_residue_dictionary = self._combine_dictionaries(residue_list)
 
         # Iterate through all numbered positions
-        for key in merged_residue_dictionary.keys():
+        for _, value in merged_residue_dictionary.items():
             # Get position counts
-            position_counter = Counter(merged_residue_dictionary[key])
+            position_counter = Counter(value)
             total_counts = position_counter.total()
 
             # Iterate through counter items to update with residue probabilities
             for item, _ in position_counter.items():
                 position_counter[item] /= total_counts
             # Update dictionary
-            merged_residue_dictionary[key] = position_counter
+            value = position_counter
         return merged_residue_dictionary
 
     @staticmethod
@@ -441,9 +337,12 @@ class AntibodyViability(PostProcessor):
     ) -> tuple[bool, Optional[int], Optional[int], Optional[dict]]:
         """
         ## Flags based off of certain positions
-        Although less readable if it was split into multiple functions, going through multiple for loops is slow as well.
-        First checks if the CDR3 has been flagged for an indel. Then checks conserved positions, special positions, light chain
-        absent positions and special rabbit positions. Sorry for anyone who has to understand this... \n
+        Although less readable if it was split into multiple functions,
+        going through multiple 'for loops' is slow as well.
+        First checks if the CDR3 has been flagged for an indel.
+        Then checks conserved positions, special positions, light chain
+        absent positions and special rabbit positions.
+        Sorry for anyone who has to understand this... \n
         ### Notes:
             \t - return value True means that the sequence is faulty and will be skipped.\n
             \t - position`[0][0]` is the numbered index from anarci \n
@@ -494,7 +393,7 @@ class AntibodyViability(PostProcessor):
                 # Check if fwr3 needs to be adjusted
                 if position[0][0] == 73:
                     fwr3_adjustment += 1
-                # These can be absent in the light chain, we only check the first possible alignment for the chain type
+                # These can be absent in the light chain, we only check the first possible alignment
                 if position[0][0] in [81, 82] and sequence_info[0]["chain_type"] == "L":
                     absent_residues -= 1
                 # This rabbit specific position can be absent
@@ -632,26 +531,28 @@ class AntibodyViability(PostProcessor):
 
 
 if __name__ == "__main__":
-    path = Path("/central/groups/smayo/lschaus/OAS_Files").glob("**/*")
-    list_of_files = [file for file in path if file.is_file()]
+    oas_files_path = Path("/central/groups/smayo/lschaus/OAS_Files").glob("**/*")
+    list_of_files = [file for file in oas_files_path if file.is_file()]
 
     for file in list_of_files:
         file_size = file.stat().st_size / 1024
         if file_size < 1000:
-            ncpus = 2
-            max_batch_size = 1000
+            NCPUS_TEST = 2
+            MAX_BATCH_SIZE_TEST = 1000
         elif file_size < 300_000:
-            ncpus = 32
-            max_batch_size = 1000
+            NCPUS_TEST = 32
+            MAX_BATCH_SIZE_TEST = 1000
         else:
-            ncpus = 10
-            max_batch_size = 500
+            NCPUS_TEST = 10
+            MAX_BATCH_SIZE_TEST = 500
         A = AntibodyViability()
         A.load_file(file)
-        A.process(batch_size="dynamic", ncpus=ncpus, max_batch_size=max_batch_size)
+        A.process(
+            batch_size="dynamic", ncpus=NCPUS_TEST, max_batch_size=MAX_BATCH_SIZE_TEST
+        )
         save_path = Path("/central/groups/smayo/lschaus/OAS_Processed")
         save_path = save_path / file.name
-        A.save_file(save_path)
+        A.save_file(save_path, A.data)
 
     # # First batch
     # A = AntibodyViability()
