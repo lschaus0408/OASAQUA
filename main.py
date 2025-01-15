@@ -10,6 +10,8 @@ the data and filemanager to save the data/add data to existing files. Main is al
 communicating with the post-processing tools.
 """
 
+### TO DO!!! Make sure to always include 'Chain' CATEGORY for postprocessors to work
+
 import os
 import warnings
 from os.path import join
@@ -533,7 +535,6 @@ class API:
         Post Processing factory + imports
         Run processing
         """
-        pass
 
 
 if __name__ == "__main__":
