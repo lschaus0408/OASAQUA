@@ -8,16 +8,24 @@ Splits the dataset into training, test, and validation sets.
 """
 
 import warnings
+import random
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional, Callable
 from math import isclose
+from functools import partial
 
 import pandas as pd
 
 from tqdm import tqdm
 
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
+from postprocessing.sequence_tracker import (
+    SequenceTracker,
+    StatusType,
+    SequenceStatus,
+    SequenceIdType,
+)
 
 
 class DataMaker(PostProcessor):
@@ -35,7 +43,7 @@ class DataMaker(PostProcessor):
     of sequences in the file or per category.
     ### Args:
         \t directory_or_file_path {Path} -- Path where file(s) to be processed are present \n
-        \t number_of_sequences {dict[str,int]} -- Optional: Number of sequences in the train,
+        \t dataset_numbers {dict[str,int]} -- Optional: Number of sequences in the train,
         test, and validation sets \n
         \t dataset_ratios {dict[str, float]} -- Optional: Data split ratio for train, test,
         and validation sets \n
@@ -43,42 +51,40 @@ class DataMaker(PostProcessor):
         \t aliases {dict} -- Optional: Convert categories to different names \n
         \t category_ratios {dict} -- Optional: Ratio of categories in set \n
         \t verbose {bool} -- Optional: Provides additional information during processing. \n
-    Note: Only one of 'number_of_sequences' or 'dataset_ratios' can be passed as a value.
+    Note: Only one of 'dataset_numbers' or 'dataset_ratios' can be passed as a value.
     Passing both, will default to ratios.
     """
 
     def __init__(
         self,
         directory_or_file_path: Path,
-        number_of_sequences: Optional[dict[str, int]] = None,
-        dataset_ratios: Optional[dict[str, float]] = None,
+        dataset_numbers: Optional[dict[StatusType, int]] = None,
+        dataset_ratios: Optional[dict[StatusType, float]] = None,
         category_column: Optional[str] = None,
         aliases: Optional[dict[str, str]] = None,
         category_ratios: dict[str, float] = None,
         verbose: Optional[bool] = False,
     ):
         self.directory_or_file_path = directory_or_file_path
-        self.number_of_sequences = number_of_sequences
+        self.dataset_numbers = dataset_numbers
         self.dataset_ratios = dataset_ratios
         self.category_column = category_column
         self.aliases = aliases
         self.category_ratios = category_ratios
         self.verbose = verbose
 
-        if self.number_of_sequences is None and self.dataset_ratios is None:
+        if self.dataset_numbers is None and self.dataset_ratios is None:
             raise ValueError(
-                "number_of_sequences and dataset_ratios cannot be None at the same time. \
+                "dataset_numbers and dataset_ratios cannot be None at the same time. \
                  One has to be specified!"
             )
-        if self.number_of_sequences is not None and self.dataset_ratios is not None:
+        if self.dataset_numbers is not None and self.dataset_ratios is not None:
             warnings.warn(
-                "Both number_of_sequences and dataset_ratios have been defined. \
+                "Both dataset_numbers and dataset_ratios have been defined. \
                 By default only dataset_ratios will be used.",
                 UserWarning,
             )
-        if self.dataset_ratios is not None:
-            sum_to_one = sum(self.dataset_ratios.values())
-            assert isclose(1.0, sum_to_one, abs_tol=1e-3)
+            self.dataset_numbers = None
 
         self.all_files: list = []
         self.category_set: set = set()
@@ -90,6 +96,7 @@ class DataMaker(PostProcessor):
         self.test_data: pd.DataFrame = pd.DataFrame()
         self.validation_data: pd.DataFrame = pd.DataFrame()
         self.number_of_sequences: int = 0
+        self.sequence_tracker: SequenceTracker = SequenceTracker()
 
     def load_file(self, file_path: Path, overwrite=False) -> pd.DataFrame:
         """
@@ -188,16 +195,20 @@ class DataMaker(PostProcessor):
         """
         ## Creates the sequence tracker
         Go through all files and store in what file and at what index do sequences exist.
+        Always populate the 'NA' category to keep track of all IDs regardless of category.
         """
         for file_id, file in enumerate(self.all_files):
             # Read file
             data = self.load_file(file)
             data["file_id"] = file_id
-            data["Tuple"] = list(zip(data.file_id, data.index))
+            sequence_ids: list[tuple[str, str]] = list(zip(data.file_id, data.index))
+            data["Tuple"] = sequence_ids
+
+            self.sequence_tracker.add_default_identities(sequence_ids, "keep")
 
             # Skip sorting by category if it isn't specified
             if self.category_column is None:
-                self.write_to_sequence_tracker("NA", data.Tuple.to_list())
+                self.sequence_tracker.categories["NA"].extend(sequence_ids)
                 continue
 
             # Go through all categories and write to the sequence tracker
@@ -206,29 +217,138 @@ class DataMaker(PostProcessor):
                     data[self.category_column] == category
                 ].to_list()
                 if category_indices:
-                    self.write_to_sequence_tracker(
-                        category=category, category_indices=category_indices
-                    )
+                    self.sequence_tracker.categories[category].extend(sequence_ids)
+                    self.sequence_tracker.categories["NA"].extend(sequence_ids)
 
-    def write_to_sequence_tracker(
-        self, category: str, category_indices: tuple[str, int]
-    ):
-        """
-        ## Writes data to sequence tracker
-        --> CREATE SEQUENCE TRACKER DATACLASS
-        """
-        if category in self.sequence_tracker:
-            self.sequence_tracker[category].extend(category_indices)
-        else:
-            self.sequence_tracker[category] = category_indices
-
-    def sample_data(self, data_type: str) -> pd.DataFrame:
+    def sample_data(self, data_type: StatusType) -> pd.DataFrame:
         """
         ## Samples data from sequence tracker and packages into dataframes
-        MAKE A SCHEME FOR THIS
-        TO DO:
-            1) If category ratios have been set, determine the optimal ratio given the information in the sequence tracker
-            2) Figure out how much to sample for the given data type (i.e. what is the total number of sequences available to sample)
-            3) In the sequence tracker, sample the id<->file pairs, for each category, and mark the sampled one's as such
-            4) Grab the data from the original files and add them to the data types dataset
+        --> SEE PAPER SKETCH
         """
+
+        # Sampling by numbers
+        if self.dataset_numbers is not None:
+            sample_number = self.dataset_numbers[data_type]
+
+        # Sampling by ratio
+        else:
+            # Re-normalize ratios if necessary
+            self.dataset_ratios = self._normalize_ratios(self.dataset_ratios)
+            # Get ratio of the provided StatusType
+            current_ratio = self.dataset_ratios[data_type]
+
+            # Find numbers of IDs to sample
+            total_sequences = len(self.sequence_tracker.categories["NA"])
+            sample_number = round(total_sequences * current_ratio)
+
+        # Sampling factory
+        if self.category_ratios is None:
+            sampled_ids = self._sampling_factory(
+                mode="simple", sample_number=sample_number
+            )
+        else:
+            sampled_ids = self._sampling_factory(
+                mode="category", sample_number=sample_number
+            )
+
+        # Update Status
+        for identifier in sampled_ids:
+            current_sequence_status = self.sequence_tracker.identities[identifier]
+            current_sequence_status.status = data_type
+            # Remove generic category member for easier sampling
+            self.sequence_tracker.categories["NA"].remove(identifier)
+            """^^^ NOTE: SHOULDN'T I REPLACE THIS WITH A STATUS SWITCH?
+                ISSUE: DOESN"T THAT ADD A SAMPLING ISSUE?
+                SOLUTION: CREATE A NEW LIST OF THE NON-SAMPLED ID'S, THEN
+                SAMPLE FROM THERE!
+                >>> TEST AND THEN GENERALIZE THIS CODE
+                >>> DON'T FORGET THE SAMPLE BY NUMBER CODE (VS RATIO)
+            """
+
+        del self.dataset_ratios[data_type]
+
+    def _sampling_factory(
+        self, mode: Literal["simple", "category"], sample_number: int
+    ) -> Callable:
+        """
+        ## Factory to decide if simple sampling or category sampling
+        """
+        factory_dictionary = {
+            "simple": self._simple_sampling,
+            "category": self._category_sampling,
+        }
+        return partial(factory_dictionary[mode], sample_number)
+
+    def _simple_sampling(self, sample_number: int) -> list[SequenceIdType]:
+        """
+        ## Simple sampling
+        I.e. any sequence is valid
+        """
+        return random.sample(self.sequence_tracker.categories["NA"], sample_number)
+
+    def _category_sampling(
+        self,
+        sample_number: int,
+        priority: tuple[str, str, str] = ("train", "test", "validate"),
+    ) -> list[SequenceIdType]:
+        """
+        ## Category Sampling
+        I.e. samples according to the ratios of each category provided.
+        If the ratio provided results in a larger number of samples than
+        available, the ratios are re-adjusted to the closest possible ratio.
+        At low numbers of examples in a given category, the allocation priority
+        is by default set as train > test > validation.
+        """
+        # TO DO NEXT --> Check sheet
+
+    def _normalize_ratios(self, dictionary: dict[str, float]) -> dict[str, float]:
+        """
+        ## Normalizes the ratios of a given dictionary
+        """
+        ratio_sum = sum(dictionary.values())
+        if isclose(1.0, ratio_sum, abs_tol=1e-3):
+            return dictionary
+        else:
+            correction = 1 / ratio_sum
+            for key, value in dictionary.items():
+                dictionary[key] = value * correction
+            return dictionary
+
+
+if __name__ == "__main__":
+    data_making_test = DataMaker(
+        directory_or_file_path=Path("./"),
+        dataset_ratios={"train": 0.8, "test": 0.1, "validate": 0.1},
+    )
+    tracking = SequenceTracker(
+        identities={
+            ("test_file1", "1"): SequenceStatus(sequence="A"),
+            ("test_file1", "2"): SequenceStatus(sequence="C"),
+            ("test_file1", "3"): SequenceStatus(sequence="D"),
+            ("test_file1", "4"): SequenceStatus(sequence="E"),
+            ("test_file1", "5"): SequenceStatus(sequence="F"),
+            ("test_file1", "6"): SequenceStatus(sequence="G"),
+            ("test_file1", "7"): SequenceStatus(sequence="H"),
+            ("test_file1", "8"): SequenceStatus(sequence="I"),
+            ("test_file1", "9"): SequenceStatus(sequence="K"),
+            ("test_file1", "0"): SequenceStatus(sequence="L"),
+        },
+        categories={
+            "NA": [
+                ("test_file1", "1"),
+                ("test_file1", "2"),
+                ("test_file1", "3"),
+                ("test_file1", "4"),
+                ("test_file1", "5"),
+                ("test_file1", "6"),
+                ("test_file1", "7"),
+                ("test_file1", "8"),
+                ("test_file1", "9"),
+                ("test_file1", "0"),
+            ]
+        },
+    )
+    data_making_test.sequence_tracker = tracking
+    data_making_test.sample_data(data_type="train")
+    data_making_test.sample_data(data_type="test")
+    print(data_making_test.sequence_tracker)
