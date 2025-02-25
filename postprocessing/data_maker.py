@@ -11,9 +11,10 @@ import warnings
 import random
 
 from pathlib import Path
-from typing import Literal, Optional, Callable
+from typing import Union, Literal, Optional, Any
 from math import isclose
 from functools import partial
+from collections import defaultdict
 
 import pandas as pd
 
@@ -26,6 +27,9 @@ from postprocessing.sequence_tracker import (
     SequenceStatus,
     SequenceIdType,
 )
+
+dataset_definition_type = Literal["train", "test", "validation"]
+priority_type = tuple[dataset_definition_type, ...]
 
 
 class DataMaker(PostProcessor):
@@ -51,6 +55,8 @@ class DataMaker(PostProcessor):
         \t aliases {dict} -- Optional: Convert categories to different names \n
         \t category_ratios {dict} -- Optional: Ratio of categories in set \n
         \t verbose {bool} -- Optional: Provides additional information during processing. \n
+        \t dataset_priority {priority_type} -- Optional: Changes the priority of data
+        allocation when sampling
     Note: Only one of 'dataset_numbers' or 'dataset_ratios' can be passed as a value.
     Passing both, will default to ratios.
     """
@@ -62,8 +68,9 @@ class DataMaker(PostProcessor):
         dataset_ratios: Optional[dict[StatusType, float]] = None,
         category_column: Optional[str] = None,
         aliases: Optional[dict[str, str]] = None,
-        category_ratios: dict[str, float] = None,
+        category_ratios: Optional[dict[str, float]] = None,
         verbose: Optional[bool] = False,
+        dataset_priority: Optional[priority_type] = None,
     ):
         self.directory_or_file_path = directory_or_file_path
         self.dataset_numbers = dataset_numbers
@@ -97,6 +104,8 @@ class DataMaker(PostProcessor):
         self.validation_data: pd.DataFrame = pd.DataFrame()
         self.number_of_sequences: int = 0
         self.sequence_tracker: SequenceTracker = SequenceTracker()
+        self.change_dataset_priority = dataset_priority
+        self.adjustment_ratio: float = 1.0
 
     def load_file(self, file_path: Path, overwrite=False) -> pd.DataFrame:
         """
@@ -133,13 +142,17 @@ class DataMaker(PostProcessor):
         if self.verbose:
             self.print_data_info()
 
-        tqdm.write("Creating sequence tracker...")
+        if self.verbose:
+            tqdm.write("Creating sequence tracker...")
         self.create_sequence_tracker()
-        tqdm.write("Sampling training data...")
+        if self.verbose:
+            tqdm.write("Sampling training data...")
         self.sample_data(data_type="training")
-        tqdm.write("Sampling test data...")
+        if self.verbose:
+            tqdm.write("Sampling test data...")
         self.sample_data(data_type="test")
-        tqdm.write("Sampling validation data...")
+        if self.verbose:
+            tqdm.write("Sampling validation data...")
         self.sample_data(data_type="validation")
         return
 
@@ -228,7 +241,9 @@ class DataMaker(PostProcessor):
 
         # Sampling by numbers
         if self.dataset_numbers is not None:
-            sample_number = self.dataset_numbers[data_type]
+            sample_number = round(
+                self.dataset_numbers[data_type] * self.adjustment_ratio
+            )
 
         # Sampling by ratio
         else:
@@ -239,17 +254,14 @@ class DataMaker(PostProcessor):
 
             # Find numbers of IDs to sample
             total_sequences = len(self.sequence_tracker.categories["NA"])
-            sample_number = round(total_sequences * current_ratio)
+            sample_number = round(
+                total_sequences * current_ratio * self.adjustment_ratio
+            )
 
         # Sampling factory
-        if self.category_ratios is None:
-            sampled_ids = self._sampling_factory(
-                mode="simple", sample_number=sample_number
-            )
-        else:
-            sampled_ids = self._sampling_factory(
-                mode="category", sample_number=sample_number
-            )
+        sampled_ids = self._sampling_factory(
+            mode=self.category_ratios, sample_number=sample_number, data_type=data_type
+        )
 
         # Update Status
         for identifier in sampled_ids:
@@ -262,34 +274,48 @@ class DataMaker(PostProcessor):
                 SOLUTION: CREATE A NEW LIST OF THE NON-SAMPLED ID'S, THEN
                 SAMPLE FROM THERE!
                 >>> TEST AND THEN GENERALIZE THIS CODE
-                >>> DON'T FORGET THE SAMPLE BY NUMBER CODE (VS RATIO)
             """
 
         del self.dataset_ratios[data_type]
 
     def _sampling_factory(
-        self, mode: Literal["simple", "category"], sample_number: int
-    ) -> Callable:
+        self, mode: Union[None, Any], sample_number: int, data_type: StatusType
+    ) -> list[SequenceIdType]:
         """
         ## Factory to decide if simple sampling or category sampling
         """
-        factory_dictionary = {
-            "simple": self._simple_sampling,
-            "category": self._category_sampling,
-        }
-        return partial(factory_dictionary[mode], sample_number)
+        # Partially apply category sampling if necessary
+        if self.change_dataset_priority is not None:
+            default_function = partial(
+                self._category_sampling, priority=self.change_dataset_priority
+            )
+        else:
+            default_function = self._category_sampling
 
-    def _simple_sampling(self, sample_number: int) -> list[SequenceIdType]:
+        # Setup factory
+        factory_dictionary = defaultdict(default_function)
+        factory_dictionary[None] = self._simple_sampling
+
+        return factory_dictionary[mode](
+            sample_number=sample_number, data_type=data_type
+        )
+
+    def _simple_sampling(
+        self,
+        sample_number: int,
+        data_type: StatusType,  # pylint: disable=unused-argument
+    ) -> list[SequenceIdType]:
         """
         ## Simple sampling
-        I.e. any sequence is valid
+        I.e. any sequence of the tracker is valid
         """
         return random.sample(self.sequence_tracker.categories["NA"], sample_number)
 
     def _category_sampling(
         self,
         sample_number: int,
-        priority: tuple[str, str, str] = ("train", "test", "validate"),
+        data_type: StatusType,
+        priority: priority_type = ("train", "test", "validate"),
     ) -> list[SequenceIdType]:
         """
         ## Category Sampling
@@ -298,7 +324,39 @@ class DataMaker(PostProcessor):
         available, the ratios are re-adjusted to the closest possible ratio.
         At low numbers of examples in a given category, the allocation priority
         is by default set as train > test > validation.
+        Alternative allocations of priorities is done via functools partial when the
+        factory is called.
         """
+        # How much to sample per category
+        sample_number_per_category = {}
+
+        for key, identities in self.sequence_tracker.categories.items():
+            # Find sample number and adjust if necessary
+            current_sample_number = round(sample_number * self.category_ratios[key])
+            overunder = current_sample_number - len(identities)
+            """
+            NEXT STEPS:
+                - We're now going for a much more simplified version (no more stupid ratios)
+                - If overunder is positive or zero:
+                    - Check if there are more than 2 examples to allocate into the dataset
+                        --> If it is priority 1: give it N-2
+                        --> If it is priority 2: give it 1
+                        --> If it is priority 3: give it 1
+                    - If there are only 2 examples
+                        --> Priority 1: 1
+                        --> Priority 2: 1
+                        --> Priority 3: 0
+                    - If there is only 1 example
+                        --> Priority 1: 1
+                        --> Priority 2,3: 0
+                - If overunder is -1:
+                    - Priority 1: N
+                    - Priority 2: 1
+                    - Priority 3: 0
+                If overunder is <-1:
+                    - Continue
+            """
+
         # TO DO NEXT --> Check sheet
 
     def _normalize_ratios(self, dictionary: dict[str, float]) -> dict[str, float]:
