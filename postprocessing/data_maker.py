@@ -28,8 +28,8 @@ from postprocessing.sequence_tracker import (
     SequenceIdType,
 )
 
-dataset_definition_type = Literal["train", "test", "validation"]
-priority_type = tuple[dataset_definition_type, ...]
+DatasetDefinitionType = Literal["train", "test", "validation"]
+PriorityType = tuple[DatasetDefinitionType, ...]
 
 
 class DataMaker(PostProcessor):
@@ -70,7 +70,7 @@ class DataMaker(PostProcessor):
         aliases: Optional[dict[str, str]] = None,
         category_ratios: Optional[dict[str, float]] = None,
         verbose: Optional[bool] = False,
-        dataset_priority: Optional[priority_type] = None,
+        dataset_priority: Optional[PriorityType] = ("train", "test", "validation"),
     ):
         self.directory_or_file_path = directory_or_file_path
         self.dataset_numbers = dataset_numbers
@@ -145,15 +145,15 @@ class DataMaker(PostProcessor):
         if self.verbose:
             tqdm.write("Creating sequence tracker...")
         self.create_sequence_tracker()
-        if self.verbose:
-            tqdm.write("Sampling training data...")
-        self.sample_data(data_type="training")
-        if self.verbose:
-            tqdm.write("Sampling test data...")
-        self.sample_data(data_type="test")
-        if self.verbose:
-            tqdm.write("Sampling validation data...")
-        self.sample_data(data_type="validation")
+
+        for dataset in self.change_dataset_priority:
+            if (
+                dataset in self.dataset_numbers.keys()
+                or dataset in self.dataset_ratios.keys()
+            ):
+                if self.verbose:
+                    tqdm.write(f"Sampling {dataset} data...")
+                self.sample_data(data_type={dataset})
         return
 
     def get_files_list(self, directory_or_file_path: Path):
@@ -274,6 +274,7 @@ class DataMaker(PostProcessor):
                 SOLUTION: CREATE A NEW LIST OF THE NON-SAMPLED ID'S, THEN
                 SAMPLE FROM THERE!
                 >>> TEST AND THEN GENERALIZE THIS CODE
+                >>> len(self.dataset_ratios) is a pitfall with the way it works right now!
             """
 
         del self.dataset_ratios[data_type]
@@ -284,13 +285,8 @@ class DataMaker(PostProcessor):
         """
         ## Factory to decide if simple sampling or category sampling
         """
-        # Partially apply category sampling if necessary
-        if self.change_dataset_priority is not None:
-            default_function = partial(
-                self._category_sampling, priority=self.change_dataset_priority
-            )
-        else:
-            default_function = self._category_sampling
+        # Category sampling is the default function
+        default_function = self._category_sampling
 
         # Setup factory
         factory_dictionary = defaultdict(default_function)
@@ -315,49 +311,122 @@ class DataMaker(PostProcessor):
         self,
         sample_number: int,
         data_type: StatusType,
-        priority: priority_type = ("train", "test", "validate"),
     ) -> list[SequenceIdType]:
         """
         ## Category Sampling
         I.e. samples according to the ratios of each category provided.
         If the ratio provided results in a larger number of samples than
         available, the ratios are re-adjusted to the closest possible ratio.
-        At low numbers of examples in a given category, the allocation priority
-        is by default set as train > test > validation.
-        Alternative allocations of priorities is done via functools partial when the
-        factory is called.
         """
-        # How much to sample per category
-        sample_number_per_category = {}
+        # Think about doing a while loop until this lenght corresponds to desired number
+        output_sample_ids = []
+        while len(output_sample_ids) < sample_number:
+            pass
 
-        for key, identities in self.sequence_tracker.categories.items():
-            # Find sample number and adjust if necessary
-            current_sample_number = round(sample_number * self.category_ratios[key])
-            overunder = current_sample_number - len(identities)
-            """
-            NEXT STEPS:
-                - We're now going for a much more simplified version (no more stupid ratios)
-                - If overunder is positive or zero:
-                    - Check if there are more than 2 examples to allocate into the dataset
-                        --> If it is priority 1: give it N-2
-                        --> If it is priority 2: give it 1
-                        --> If it is priority 3: give it 1
-                    - If there are only 2 examples
-                        --> Priority 1: 1
-                        --> Priority 2: 1
-                        --> Priority 3: 0
-                    - If there is only 1 example
-                        --> Priority 1: 1
-                        --> Priority 2,3: 0
-                - If overunder is -1:
-                    - Priority 1: N
-                    - Priority 2: 1
-                    - Priority 3: 0
-                If overunder is <-1:
-                    - Continue
-            """
+        # TO DO: How to do it with only the sample number and no ratio
+        # --> SAME BUT WITHOUT CALCULATING THE ACTUAL NUMBER
+
+        subtotal_ratio_allocation = 0
+
+        # Allocate greedily from smallest ratio
+        for data_key in self._sorted_keys_by_value(self.dataset_ratios):
+            # Determine the allocation difference to not oversample
+            ratio_allocation_difference = (
+                self.dataset_ratios[data_key] - subtotal_ratio_allocation
+            )
+            subtotal_ratio_allocation += self.dataset_ratios[data_key]
+
+            # Get the maximum sample size for this allocation round
+            maximum_sample_size = round(
+                len(self.sequence_tracker.identities) * ratio_allocation_difference
+            )
+
+            # Iterate through cats for allocation
+            for cat_key, cat_value in self.category_ratios:
+                category_sample_status = defaultdict(list)
+                category_sample_status["unreserved"] = self.sequence_tracker.categories[
+                    cat_key
+                ]
+
+                # Multiply by number of datasets to ensure sampling
+                category_sample_size = round(
+                    maximum_sample_size * cat_value * len(self.dataset_ratios)
+                )
+
+                # Check if this oversamples the category
+                total_ids_in_category = len(category_sample_status["unreserved"])
+                if category_sample_size > total_ids_in_category:
+
+                    # Allocate single
+                    if total_ids_in_category <= len(self.dataset_ratios):
+                        # Make sure that there is something to sample
+                        if total_ids_in_category == 0:
+                            continue
+                        # Sample just one in this case and shuffle around in dataset
+                        sampled_id = random.sample(
+                            category_sample_status["unreserved"], 1
+                        )
+                        # Reserved ID allocation
+                        reserved_ids = set(category_sample_status["unreserved"]) - set(
+                            sampled_id
+                        )
+                        category_sample_status = self._change_sampling_status(
+                            category_sample_status, sampled_id, reserved_ids
+                        )
+
+                    # Allocate the rest
+                    else:
+                        quotient, remainder = divmod(
+                            total_ids_in_category, len(self.dataset_ratios)
+                        )
+                        sampled_id = random.sample(
+                            category_sample_status["unreserved"], quotient + remainder
+                        )
+                        # Reserved ID allocation
+                        reserved_ids = set(category_sample_status["unreserved"]) - set(
+                            sampled_id
+                        )
+                        category_sample_status = self._change_sampling_status(
+                            category_sample_status, sampled_id, reserved_ids
+                        )
+                # IF IT DOESNT OVERSAMPLE, ALLOCATE NOW
 
         # TO DO NEXT --> Check sheet
+
+    @staticmethod
+    def _change_sampling_status(
+        category_sample_status_dict: dict[str, list[SequenceIdType]],
+        sampled_ids: list[SequenceIdType],
+        reserved_ids: Optional[list[SequenceIdType]] = None,
+    ) -> dict[str, list[SequenceIdType]]:
+        """
+        ## Changes the status of a category sample set
+        """
+        # Add IDs to sampled
+        category_sample_status_dict["sampled"].extend(sampled_ids)
+
+        # Add IDs to reserved
+        if reserved_ids is not None:
+            category_sample_status_dict["reserved"].extend(reserved_ids)
+
+        # Removed added IDs from unreserved
+        for sequence_id in category_sample_status_dict["unreserved"]:
+            if sequence_id in sampled_ids:
+                category_sample_status_dict["unreserved"].remove(sequence_id)
+            elif sequence_id in reserved_ids:
+                category_sample_status_dict["unreserved"].remove(sequence_id)
+
+        return category_sample_status_dict
+
+    @staticmethod
+    def _sorted_keys_by_value(dictionary_with_ratios: dict[str, float]) -> list:
+        """
+        ## Returns a list of keys sorted by their value
+        """
+        sorted_output_keys = sorted(
+            dictionary_with_ratios, key=dictionary_with_ratios.get
+        )
+        return sorted_output_keys
 
     def _normalize_ratios(self, dictionary: dict[str, float]) -> dict[str, float]:
         """
