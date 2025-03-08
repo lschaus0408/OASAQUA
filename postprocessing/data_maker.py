@@ -252,16 +252,16 @@ class DataMaker(PostProcessor):
 
         # Sampling by ratio
         else:
-            # Re-normalize ratios if necessary
-            self.dataset_ratios = self._normalize_ratios(self.dataset_ratios)
             # Get ratio of the provided StatusType
             current_ratio = self.dataset_ratios[data_type]
+            print("ratio: ", current_ratio)
 
             # Find numbers of IDs to sample
             total_sequences = len(self.sequence_tracker.categories["NA"])
             sample_number = round(
                 total_sequences * current_ratio * self.adjustment_ratio
             )
+            print("number: ", sample_number)
 
         # Sampling factory
         sampled_ids = self._sampling_factory(
@@ -712,8 +712,14 @@ if __name__ == "__main__":
     data_making_test.sample_data(data_type="test")
     data_making_test.sample_data(data_type="validate")
     training_examples = 0
+    human_examples = 0
     for key, value in data_making_test.sequence_tracker.identities.items():
         if value.status == "keep":
-            print(key)
+            # print(key)
             training_examples += 1
+        if key in data_making_test.sequence_tracker.categories["rhesus"]:
+            if value.status == "keep":
+                # print(key)
+                human_examples += 1
     print(training_examples)
+    print(human_examples)
