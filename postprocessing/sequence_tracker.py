@@ -49,8 +49,12 @@ class SequenceTracker:
             category.
     """
 
-    identities: dict[SequenceIdType, SequenceStatus] = defaultdict(SequenceStatus)
-    categories: Optional[dict[str, list[SequenceIdType]]] = defaultdict(list)
+    identities: dict[SequenceIdType, SequenceStatus] = field(
+        default_factory=defaultdict(SequenceStatus)
+    )
+    categories: Optional[dict[str, list[SequenceIdType]]] = field(
+        default_factory=defaultdict(list)
+    )
     deleted: Optional[list[str]] = field(default_factory=list)
 
     def add_default_identities(
