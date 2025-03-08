@@ -50,10 +50,10 @@ class SequenceTracker:
     """
 
     identities: dict[SequenceIdType, SequenceStatus] = field(
-        default_factory=defaultdict(SequenceStatus)
+        default_factory=lambda: defaultdict(SequenceStatus)
     )
     categories: Optional[dict[str, list[SequenceIdType]]] = field(
-        default_factory=defaultdict(list)
+        default_factory=lambda: defaultdict(list)
     )
     deleted: Optional[list[str]] = field(default_factory=list)
 
