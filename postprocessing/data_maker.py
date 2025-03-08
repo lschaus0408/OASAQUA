@@ -13,8 +13,8 @@ import random
 from pathlib import Path
 from typing import Union, Literal, Optional, Any
 from math import isclose
-from functools import partial
 from collections import defaultdict
+from functools import partial
 
 import pandas as pd
 
@@ -106,6 +106,11 @@ class DataMaker(PostProcessor):
         self.sequence_tracker: SequenceTracker = SequenceTracker()
         self.change_dataset_priority = dataset_priority
         self.adjustment_ratio: float = 1.0
+
+        if self.category_ratios is not None:
+            self.sampling_mode = "category"
+        else:
+            self.sampling_mode = None
 
     def load_file(self, file_path: Path, overwrite=False) -> pd.DataFrame:
         """
@@ -260,7 +265,7 @@ class DataMaker(PostProcessor):
 
         # Sampling factory
         sampled_ids = self._sampling_factory(
-            mode=self.category_ratios, sample_number=sample_number, data_type=data_type
+            mode=self.sampling_mode, sample_number=sample_number, data_type=data_type
         )
 
         # Update Status
@@ -268,7 +273,7 @@ class DataMaker(PostProcessor):
             current_sequence_status = self.sequence_tracker.identities[identifier]
             current_sequence_status.status = data_type
             # Remove generic category member for easier sampling
-            self.sequence_tracker.categories["NA"].remove(identifier)
+            # self.sequence_tracker.categories["NA"].remove(identifier)
             """^^^ NOTE: SHOULDN'T I REPLACE THIS WITH A STATUS SWITCH?
                 ISSUE: DOESN"T THAT ADD A SAMPLING ISSUE?
                 SOLUTION: CREATE A NEW LIST OF THE NON-SAMPLED ID'S, THEN
@@ -286,15 +291,16 @@ class DataMaker(PostProcessor):
         ## Factory to decide if simple sampling or category sampling
         """
         # Category sampling is the default function
-        default_function = self._category_sampling
+        default_function = partial(
+            self._category_sampling, sample_number=sample_number, data_type=data_type
+        )
 
         # Setup factory
         factory_dictionary = defaultdict(default_function)
-        factory_dictionary[None] = self._simple_sampling
-
-        return factory_dictionary[mode](
-            sample_number=sample_number, data_type=data_type
+        factory_dictionary[None] = partial(
+            self._simple_sampling, sample_number=sample_number, data_type=data_type
         )
+        return factory_dictionary[mode]
 
     def _simple_sampling(
         self,
@@ -318,104 +324,179 @@ class DataMaker(PostProcessor):
         If the ratio provided results in a larger number of samples than
         available, the ratios are re-adjusted to the closest possible ratio.
         """
-        # Think about doing a while loop until this lenght corresponds to desired number
-        output_sample_ids = []
-        while len(output_sample_ids) < sample_number:
-            pass
+        if self.dataset_ratios is not None:
+            looping_dict = self.dataset_ratios
+        else:
+            looping_dict = self.dataset_numbers
 
-        # TO DO: How to do it with only the sample number and no ratio
-        # --> SAME BUT WITHOUT CALCULATING THE ACTUAL NUMBER
+        # Keep track of how many allocation rounds
+        allocation_round = 0
+        # Keep track of the ratio allocated previously
+        previous_round_allocation = 0
 
-        subtotal_ratio_allocation = 0
+        # Setup defaultdict here to no overwrite later
+        category_sample_status = defaultdict(list)
 
         # Allocate greedily from smallest ratio
-        for data_key in self._sorted_keys_by_value(self.dataset_ratios):
+        for data_key in self._sorted_keys_by_value(looping_dict):
+
             # Determine the allocation difference to not oversample
-            ratio_allocation_difference = (
-                self.dataset_ratios[data_key] - subtotal_ratio_allocation
+            current_round_allocation = looping_dict[data_key]
+            corrected_round_allocaion = (
+                current_round_allocation - previous_round_allocation
             )
-            subtotal_ratio_allocation += self.dataset_ratios[data_key]
+            previous_round_allocation = looping_dict[data_key]
 
-            # Get the maximum sample size for this allocation round
-            maximum_sample_size = round(
-                len(self.sequence_tracker.identities) * ratio_allocation_difference
-            )
+            # Determine the sampling case we are in
+            if self.dataset_ratios is not None:
 
-            # Iterate through cats for allocation
-            for cat_key, cat_value in self.category_ratios:
-                category_sample_status = defaultdict(list)
-                category_sample_status["unreserved"] = self.sequence_tracker.categories[
-                    cat_key
-                ]
-
-                # Multiply by number of datasets to ensure sampling
-                category_sample_size = round(
-                    maximum_sample_size * cat_value * len(self.dataset_ratios)
+                # Get the maximum sample size for this allocation round
+                maximum_sample_size = round(
+                    len(self.sequence_tracker.identities) * corrected_round_allocaion
                 )
 
-                # Check if this oversamples the category
-                total_ids_in_category = len(category_sample_status["unreserved"])
-                if category_sample_size > total_ids_in_category:
+            else:
+                # Get the maximum sample size for this allocation round
+                maximum_sample_size = corrected_round_allocaion
 
-                    # Allocate single
-                    if total_ids_in_category <= len(self.dataset_ratios):
-                        # Make sure that there is something to sample
-                        if total_ids_in_category == 0:
-                            continue
-                        # Sample just one in this case and shuffle around in dataset
-                        sampled_id = random.sample(
-                            category_sample_status["unreserved"], 1
-                        )
-                        # Reserved ID allocation
-                        reserved_ids = set(category_sample_status["unreserved"]) - set(
-                            sampled_id
-                        )
-                        category_sample_status = self._change_sampling_status(
-                            category_sample_status, sampled_id, reserved_ids
-                        )
+            # Iterate through cats for allocation
+            for cat_key, cat_value in self.category_ratios.items():
 
-                    # Allocate the rest
-                    else:
-                        quotient, remainder = divmod(
-                            total_ids_in_category, len(self.dataset_ratios)
-                        )
-                        sampled_id = random.sample(
-                            category_sample_status["unreserved"], quotient + remainder
-                        )
-                        # Reserved ID allocation
-                        reserved_ids = set(category_sample_status["unreserved"]) - set(
-                            sampled_id
-                        )
-                        category_sample_status = self._change_sampling_status(
-                            category_sample_status, sampled_id, reserved_ids
-                        )
-                # IF IT DOESNT OVERSAMPLE, ALLOCATE NOW
+                remaining_number_of_datasets = len(looping_dict) - allocation_round
+                # One loop of sampling
+                category_sample_status = self._single_loop_category_sampling(
+                    category_key=cat_key,
+                    category_value=cat_value,
+                    category_sample_status_dict=category_sample_status,
+                    maximum_sample_size=maximum_sample_size,
+                    total_number_of_datasets=remaining_number_of_datasets,
+                )
+            allocation_round += 1
 
-        # TO DO NEXT --> Check sheet
+            # If we reach the desired number of samples, break the loop
+            if len(category_sample_status["sampled"]) >= sample_number:
+                break
+
+            # Break the loop if we reached the desired data type
+            if data_key == data_type:
+                break
+
+        return category_sample_status["sampled"]
+
+    def _single_loop_category_sampling(
+        self,
+        category_key: str,
+        category_value: float,
+        category_sample_status_dict: dict[str, list[SequenceIdType]],
+        maximum_sample_size: int,
+        total_number_of_datasets: int,
+    ) -> dict[str, list[SequenceIdType]]:
+        """
+        ## One loop per category for sampling
+        """
+        # Set of IDs in this category
+        category_set = set(self.sequence_tracker.categories[category_key])
+        # Remove reserved and sampled from unreserved set
+        category_sample_status_dict["unreserved"] = category_set.difference(
+            category_sample_status_dict["reserved"],
+            category_sample_status_dict["sampled"],
+        )
+
+        # Multiply by number of datasets to ensure proper sampling
+        category_sample_size = round(
+            maximum_sample_size * category_value * total_number_of_datasets
+        )
+
+        # Check if this oversamples the category
+        total_ids_in_category = len(category_sample_status_dict["unreserved"])
+        if category_sample_size > total_ids_in_category:
+
+            # Allocate single
+            if total_ids_in_category <= total_number_of_datasets:
+                # Make sure that there is something to sample, otherwise return
+                if total_ids_in_category == 0:
+                    return category_sample_status_dict
+                # Sample just one in this case and shuffle around in dataset
+                sampled_id = random.sample(
+                    list(category_sample_status_dict["unreserved"]), 1
+                )
+                # Reserved ID allocation
+                reserved_ids = set(category_sample_status_dict["unreserved"]) - set(
+                    sampled_id
+                )
+                category_sample_status_dict = self._change_sampling_status(
+                    category_sample_status_dict, sampled_id, reserved_ids
+                )
+
+            # Allocate the rest
+            else:
+                quotient, remainder = divmod(
+                    total_ids_in_category, total_number_of_datasets
+                )
+                sampled_id = random.sample(
+                    list(category_sample_status_dict["unreserved"]),
+                    quotient + remainder,
+                )
+                # Reserved ID allocation
+                reserved_ids = set(category_sample_status_dict["unreserved"]) - set(
+                    sampled_id
+                )
+                category_sample_status_dict = self._change_sampling_status(
+                    category_sample_status_dict, sampled_id, reserved_ids
+                )
+
+        # If the category isn't oversampled
+        else:
+            individual_sample_size = round(
+                category_sample_size / total_number_of_datasets
+            )
+            # Sample for this dataset
+            sampled_id = random.sample(
+                list(category_sample_status_dict["unreserved"]), individual_sample_size
+            )
+            category_sample_status_dict = self._change_sampling_status(
+                category_sample_status_dict=category_sample_status_dict,
+                sampled_ids=sampled_id,
+            )
+            # Reserve for the remaining datasets (Subtract 1 to account for already sampled)
+            reserved_ids = random.sample(
+                list(category_sample_status_dict["unreserved"]),
+                individual_sample_size * (total_number_of_datasets - 1),
+            )
+            category_sample_status_dict = self._change_sampling_status(
+                category_sample_status_dict=category_sample_status_dict,
+                reserved_ids=reserved_ids,
+            )
+        return category_sample_status_dict
 
     @staticmethod
     def _change_sampling_status(
         category_sample_status_dict: dict[str, list[SequenceIdType]],
-        sampled_ids: list[SequenceIdType],
+        sampled_ids: Optional[list[SequenceIdType]] = None,
         reserved_ids: Optional[list[SequenceIdType]] = None,
     ) -> dict[str, list[SequenceIdType]]:
         """
         ## Changes the status of a category sample set
         """
         # Add IDs to sampled
-        category_sample_status_dict["sampled"].extend(sampled_ids)
+        if sampled_ids is not None:
+            category_sample_status_dict["sampled"].extend(sampled_ids)
 
         # Add IDs to reserved
         if reserved_ids is not None:
             category_sample_status_dict["reserved"].extend(reserved_ids)
 
+        removal_list = []
         # Removed added IDs from unreserved
         for sequence_id in category_sample_status_dict["unreserved"]:
-            if sequence_id in sampled_ids:
-                category_sample_status_dict["unreserved"].remove(sequence_id)
-            elif sequence_id in reserved_ids:
-                category_sample_status_dict["unreserved"].remove(sequence_id)
+            if sampled_ids is not None and sequence_id in sampled_ids:
+                removal_list.append(sequence_id)
+            elif reserved_ids is not None and sequence_id in reserved_ids:
+                removal_list.append(sequence_id)
 
+        category_sample_status_dict["unreserved"] = set(
+            category_sample_status_dict["unreserved"]
+        ) - set(removal_list)
         return category_sample_status_dict
 
     @staticmethod
@@ -446,6 +527,14 @@ if __name__ == "__main__":
     data_making_test = DataMaker(
         directory_or_file_path=Path("./"),
         dataset_ratios={"train": 0.8, "test": 0.1, "validate": 0.1},
+        category_column="species",
+        category_ratios={
+            "human": 0.5,
+            "mouse": 0.2,
+            "rat": 0.1,
+            "rhesus": 0.15,
+            "rabbit": 0.05,
+        },
     )
     tracking = SequenceTracker(
         identities={
@@ -458,7 +547,48 @@ if __name__ == "__main__":
             ("test_file1", "7"): SequenceStatus(sequence="H"),
             ("test_file1", "8"): SequenceStatus(sequence="I"),
             ("test_file1", "9"): SequenceStatus(sequence="K"),
-            ("test_file1", "0"): SequenceStatus(sequence="L"),
+            ("test_file2", "0"): SequenceStatus(sequence="N"),
+            ("test_file2", "1"): SequenceStatus(sequence="AM"),
+            ("test_file2", "2"): SequenceStatus(sequence="CM"),
+            ("test_file2", "3"): SequenceStatus(sequence="DM"),
+            ("test_file2", "4"): SequenceStatus(sequence="EM"),
+            ("test_file2", "5"): SequenceStatus(sequence="FM"),
+            ("test_file2", "6"): SequenceStatus(sequence="GM"),
+            ("test_file2", "7"): SequenceStatus(sequence="HM"),
+            ("test_file2", "8"): SequenceStatus(sequence="IM"),
+            ("test_file2", "9"): SequenceStatus(sequence="KM"),
+            ("test_file3", "0"): SequenceStatus(sequence="NM"),
+            ("test_file3", "1"): SequenceStatus(sequence="AMC"),
+            ("test_file3", "2"): SequenceStatus(sequence="CMC"),
+            ("test_file3", "3"): SequenceStatus(sequence="DMC"),
+            ("test_file3", "4"): SequenceStatus(sequence="EMC"),
+            ("test_file3", "5"): SequenceStatus(sequence="FMC"),
+            ("test_file3", "6"): SequenceStatus(sequence="GMC"),
+            ("test_file3", "7"): SequenceStatus(sequence="HMC"),
+            ("test_file3", "8"): SequenceStatus(sequence="IMC"),
+            ("test_file3", "9"): SequenceStatus(sequence="KMC"),
+            ("test_file3", "0"): SequenceStatus(sequence="NMC"),
+            ("test_file4", "0"): SequenceStatus(sequence="NM"),
+            ("test_file4", "1"): SequenceStatus(sequence="AMCD"),
+            ("test_file4", "2"): SequenceStatus(sequence="CMCD"),
+            ("test_file4", "3"): SequenceStatus(sequence="DMCD"),
+            ("test_file4", "4"): SequenceStatus(sequence="EMCD"),
+            ("test_file4", "5"): SequenceStatus(sequence="FMCD"),
+            ("test_file4", "6"): SequenceStatus(sequence="GMCD"),
+            ("test_file4", "7"): SequenceStatus(sequence="HMCD"),
+            ("test_file4", "8"): SequenceStatus(sequence="IMCD"),
+            ("test_file4", "9"): SequenceStatus(sequence="KMCD"),
+            ("test_file4", "0"): SequenceStatus(sequence="NMCD"),
+            ("test_file5", "1"): SequenceStatus(sequence="AMCDE"),
+            ("test_file5", "2"): SequenceStatus(sequence="CMCDE"),
+            ("test_file5", "3"): SequenceStatus(sequence="DMCDE"),
+            ("test_file5", "4"): SequenceStatus(sequence="EMCDE"),
+            ("test_file5", "5"): SequenceStatus(sequence="FMCDE"),
+            ("test_file5", "6"): SequenceStatus(sequence="GMCDE"),
+            ("test_file5", "7"): SequenceStatus(sequence="HMCDE"),
+            ("test_file5", "8"): SequenceStatus(sequence="IMCDE"),
+            ("test_file5", "9"): SequenceStatus(sequence="KMCDE"),
+            ("test_file5", "0"): SequenceStatus(sequence="NMCDE"),
         },
         categories={
             "NA": [
@@ -471,11 +601,119 @@ if __name__ == "__main__":
                 ("test_file1", "7"),
                 ("test_file1", "8"),
                 ("test_file1", "9"),
-                ("test_file1", "0"),
-            ]
+                ("test_file2", "0"),
+                ("test_file2", "1"),
+                ("test_file2", "2"),
+                ("test_file2", "3"),
+                ("test_file2", "4"),
+                ("test_file2", "5"),
+                ("test_file2", "6"),
+                ("test_file2", "7"),
+                ("test_file2", "8"),
+                ("test_file2", "9"),
+                ("test_file3", "0"),
+                ("test_file3", "1"),
+                ("test_file3", "2"),
+                ("test_file3", "3"),
+                ("test_file3", "4"),
+                ("test_file3", "5"),
+                ("test_file3", "6"),
+                ("test_file3", "7"),
+                ("test_file3", "8"),
+                ("test_file3", "9"),
+                ("test_file3", "0"),
+                ("test_file4", "0"),
+                ("test_file4", "1"),
+                ("test_file4", "2"),
+                ("test_file4", "3"),
+                ("test_file4", "4"),
+                ("test_file4", "5"),
+                ("test_file4", "6"),
+                ("test_file4", "7"),
+                ("test_file4", "8"),
+                ("test_file4", "9"),
+                ("test_file4", "0"),
+                ("test_file5", "1"),
+                ("test_file5", "2"),
+                ("test_file5", "3"),
+                ("test_file5", "4"),
+                ("test_file5", "5"),
+                ("test_file5", "6"),
+                ("test_file5", "7"),
+                ("test_file5", "8"),
+                ("test_file5", "9"),
+                ("test_file5", "0"),
+            ],
+            "human": [
+                ("test_file1", "1"),
+                ("test_file1", "2"),
+                ("test_file1", "3"),
+                ("test_file1", "4"),
+                ("test_file1", "5"),
+                ("test_file1", "6"),
+                ("test_file1", "7"),
+                ("test_file1", "8"),
+                ("test_file1", "9"),
+                ("test_file2", "0"),
+                ("test_file2", "1"),
+                ("test_file2", "2"),
+                ("test_file2", "3"),
+                ("test_file2", "4"),
+                ("test_file2", "5"),
+                ("test_file2", "6"),
+                ("test_file2", "7"),
+                ("test_file2", "8"),
+                ("test_file2", "9"),
+            ],
+            "mouse": [
+                ("test_file3", "0"),
+                ("test_file3", "1"),
+                ("test_file3", "2"),
+                ("test_file3", "3"),
+                ("test_file3", "4"),
+                ("test_file3", "5"),
+                ("test_file3", "6"),
+                ("test_file3", "7"),
+                ("test_file3", "8"),
+                ("test_file3", "9"),
+                ("test_file3", "0"),
+            ],
+            "rat": [
+                ("test_file4", "0"),
+                ("test_file4", "1"),
+                ("test_file4", "2"),
+                ("test_file4", "3"),
+                ("test_file4", "4"),
+                ("test_file4", "5"),
+                ("test_file4", "6"),
+                ("test_file4", "7"),
+                ("test_file4", "8"),
+                ("test_file4", "9"),
+                ("test_file4", "0"),
+            ],
+            "rhesus": [
+                ("test_file5", "1"),
+                ("test_file5", "2"),
+                ("test_file5", "3"),
+                ("test_file5", "4"),
+                ("test_file5", "5"),
+            ],
+            "rabbit": [
+                ("test_file5", "6"),
+                ("test_file5", "7"),
+                ("test_file5", "8"),
+                ("test_file5", "9"),
+                ("test_file5", "0"),
+            ],
         },
     )
     data_making_test.sequence_tracker = tracking
     data_making_test.sample_data(data_type="train")
     data_making_test.sample_data(data_type="test")
-    print(data_making_test.sequence_tracker)
+    data_making_test.sample_data(data_type="validate")
+    training_examples = 0
+    for key, value in data_making_test.sequence_tracker.identities.items():
+        if value.status == "keep":
+            print(key)
+            training_examples += 1
+    print(training_examples)
