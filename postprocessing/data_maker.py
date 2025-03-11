@@ -106,6 +106,8 @@ class DataMaker(PostProcessor):
         self.sequence_tracker: SequenceTracker = SequenceTracker()
         self.change_dataset_priority = dataset_priority
         self.adjustment_ratio: float = 1.0
+        self.total_sampleable_sequences: int = 0
+        self.processed_datasets: Union[dict[pd.DataFrame], None] = None
 
         if self.category_ratios is not None:
             self.sampling_mode = "category"
@@ -136,6 +138,11 @@ class DataMaker(PostProcessor):
         # Get all files to process
         self.get_files_list(self.directory_or_file_path)
 
+        """
+        TO DO:
+            - THIS BELOW SHOULDN'T WORK WHEN NO CATEGORY_COLUMN IS PROVIDED
+            - THE ELSE BLOCK NEEDS TO LOAD ALL FILES AS WELL
+        """
         if self.category_column is not None:
             tqdm.write("Collecting categories...")
             self.get_categories_and_sequence_number()
@@ -159,7 +166,45 @@ class DataMaker(PostProcessor):
                 if self.verbose:
                     tqdm.write(f"Sampling {dataset} data...")
                 self.sample_data(data_type={dataset})
+
+        assembly_datastructure = self.restructure_sequence_tracker_data()
+        """
+        TO DO:
+            - FINISH ASSEMBLE DATASETS
+            - FINISH SAVE DATASETS
+        """
+        self.assemble_datasets(assembly_datastructure=assembly_datastructure)
         return
+
+    def assemble_datasets(
+        self,
+        assembly_datastructure: dict[str, dict[str, list]],
+    ) -> None:
+        """
+        ## Assembles datasets into DataFrames
+        """
+
+    def restructure_sequence_tracker_data(self) -> dict[str, dict[str, list]]:
+        """
+        ## Restructures Sequence Tracker data to efficiently assemble datasets
+        Iterates through sequence tracker identities and sorts them by file.
+        Then opens each file and appends the data to a dataframe for each dataset.
+        The assembly datastructure is dict[file_id, dict[status, sequence_id]].
+        """
+        assembly_datastructure = defaultdict(lambda: defaultdict(list))
+
+        # Iterate through the tracker
+        for file_id, sequence_id in self.sequence_tracker.identities.keys():
+            # Grab the sequence status
+            current_sequence_status = self.sequence_tracker.identities[
+                (file_id, sequence_id)
+            ].status
+            # Keep only the IDs with the proper identity
+            if current_sequence_status == "keep" or current_sequence_status == "delete":
+                continue
+            # Extend the dictionary
+            assembly_datastructure[file_id][current_sequence_status].extend(sequence_id)
+        return assembly_datastructure
 
     def get_files_list(self, directory_or_file_path: Path):
         """
@@ -238,10 +283,14 @@ class DataMaker(PostProcessor):
                     self.sequence_tracker.categories[category].extend(sequence_ids)
                     self.sequence_tracker.categories["NA"].extend(sequence_ids)
 
+            # Keep track of all possible sampleable sequences in the tracker
+            self.total_sampleable_sequences = len(
+                self.sequence_tracker.categories["NA"]
+            )
+
     def sample_data(self, data_type: StatusType) -> pd.DataFrame:
         """
         ## Samples data from sequence tracker and packages into dataframes
-        --> SEE PAPER SKETCH
         """
 
         # Sampling by numbers
@@ -254,14 +303,11 @@ class DataMaker(PostProcessor):
         else:
             # Get ratio of the provided StatusType
             current_ratio = self.dataset_ratios[data_type]
-            print("ratio: ", current_ratio)
 
             # Find numbers of IDs to sample
-            total_sequences = len(self.sequence_tracker.categories["NA"])
             sample_number = round(
-                total_sequences * current_ratio * self.adjustment_ratio
+                self.total_sampleable_sequences * current_ratio * self.adjustment_ratio
             )
-            print("number: ", sample_number)
 
         # Sampling factory
         sampled_ids = self._sampling_factory(
@@ -272,17 +318,10 @@ class DataMaker(PostProcessor):
         for identifier in sampled_ids:
             current_sequence_status = self.sequence_tracker.identities[identifier]
             current_sequence_status.status = data_type
-            # Remove generic category member for easier sampling
-            # self.sequence_tracker.categories["NA"].remove(identifier)
-            """^^^ NOTE: SHOULDN'T I REPLACE THIS WITH A STATUS SWITCH?
-                ISSUE: DOESN"T THAT ADD A SAMPLING ISSUE?
-                SOLUTION: CREATE A NEW LIST OF THE NON-SAMPLED ID'S, THEN
-                SAMPLE FROM THERE!
-                >>> TEST AND THEN GENERALIZE THIS CODE
-                >>> len(self.dataset_ratios) is a pitfall with the way it works right now!
-            """
-
-        del self.dataset_ratios[data_type]
+            # Remove category member to not double-sample
+            self.sequence_tracker.remove_id_from_categories(
+                identifier=identifier, verbose=self.verbose
+            )
 
     def _sampling_factory(
         self, mode: Union[None, Any], sample_number: int, data_type: StatusType
@@ -295,12 +334,14 @@ class DataMaker(PostProcessor):
             self._category_sampling, sample_number=sample_number, data_type=data_type
         )
 
-        # Setup factory
-        factory_dictionary = defaultdict(default_function)
+        # Need lambda: default_function in order to return a callable and not the result
+        factory_dictionary = defaultdict(lambda: default_function)
         factory_dictionary[None] = partial(
             self._simple_sampling, sample_number=sample_number, data_type=data_type
         )
-        return factory_dictionary[mode]
+
+        # Call the factory on return
+        return factory_dictionary[mode]()
 
     def _simple_sampling(
         self,
@@ -395,9 +436,9 @@ class DataMaker(PostProcessor):
         ## One loop per category for sampling
         """
         # Set of IDs in this category
-        category_set = set(self.sequence_tracker.categories[category_key])
+        ids_in_category = set(self.sequence_tracker.categories[category_key])
         # Remove reserved and sampled from unreserved set
-        category_sample_status_dict["unreserved"] = category_set.difference(
+        category_sample_status_dict["unreserved"] = ids_in_category.difference(
             category_sample_status_dict["reserved"],
             category_sample_status_dict["sampled"],
         )
@@ -524,6 +565,9 @@ class DataMaker(PostProcessor):
 
 
 if __name__ == "__main__":
+    from copy import deepcopy
+    import numpy as np
+
     data_making_test = DataMaker(
         directory_or_file_path=Path("./"),
         dataset_ratios={"train": 0.8, "test": 0.1, "validate": 0.1},
@@ -707,19 +751,12 @@ if __name__ == "__main__":
             ],
         },
     )
-    data_making_test.sequence_tracker = tracking
+
+    data_making_test.sequence_tracker = deepcopy(tracking)
+    data_making_test.total_sampleable_sequences = len(
+        data_making_test.sequence_tracker.categories["NA"]
+    )
     data_making_test.sample_data(data_type="train")
     data_making_test.sample_data(data_type="test")
     data_making_test.sample_data(data_type="validate")
-    training_examples = 0
-    human_examples = 0
-    for key, value in data_making_test.sequence_tracker.identities.items():
-        if value.status == "keep":
-            # print(key)
-            training_examples += 1
-        if key in data_making_test.sequence_tracker.categories["rhesus"]:
-            if value.status == "keep":
-                # print(key)
-                human_examples += 1
-    print(training_examples)
-    print(human_examples)
+    print(data_making_test.restructure_sequence_tracker_data())
