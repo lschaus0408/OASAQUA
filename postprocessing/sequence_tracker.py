@@ -73,14 +73,14 @@ class SequenceTracker:
         for identifier in ids:
             self.identities[identifier].status = default_status
 
-    def update_status(self, new_status: dict[SequenceIdType, StatusType]):
+    def update_status(self, new_status: dict[SequenceIdType, StatusType]) -> None:
         """
         ## Updates SequenceStatus for each provided SequenceID
         """
         for identity, updated_status in new_status.items():
             self.identities[identity].status = updated_status
 
-    def update_deleted_sequences(self):
+    def update_deleted_sequences(self) -> None:
         """
         ## Updates the deleted list
         """
@@ -91,3 +91,22 @@ class SequenceTracker:
                 ), "In order to update the deleted list, \
                 the sequence must be known by SequenceStatus and cannot be an empty string."
                 self.deleted.append(sequence_status.sequence)
+
+    def remove_id_from_categories(
+        self, identifier: SequenceIdType, verbose: bool = False
+    ) -> None:
+        """
+        ## Removes ID from categories attribute
+        If the identifier doesn't exist, do nothing.
+        """
+        try:
+            for key in self.categories.keys():
+                self.categories[key].remove(identifier)
+        except ValueError as e:
+            if verbose:
+                print(
+                    f"The following error was caught when trying to \
+                       remove {identifier} from the sequence tracker: ",
+                    e,
+                )
+            return
