@@ -74,8 +74,10 @@ class DataMaker(PostProcessor):
         dataset_priority: Optional[PriorityType] = ("train", "test", "validation"),
         maximum_file_size_gb: Optional[int] = None,
     ):
-        self.directory_or_file_path = directory_or_file_path
-        self.output_directory = output_directory
+        super().__init__(
+            directory_or_file_path=directory_or_file_path,
+            output_directory=output_directory,
+        )
         self.dataset_numbers = dataset_numbers
         self.dataset_ratios = dataset_ratios
         self.category_column = category_column

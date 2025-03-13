@@ -4,7 +4,7 @@ Module can download different datasets from the OAS and write them into a compre
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
 region. OAS is a database from the University of Oxford Dept. of Statistics(doi: 10.1002/pro.4205)\n
 ---------------------------------------- Post Processing -----------------------------------------\n
-This module contains the post-processing tools for OAS API. Examples: Delete ambiguous sequences, 
+This module contains the post-processing tools for OAS API. Examples: Delete ambiguous sequences,
 reconstruct sequences, cluster sequences + sample etc.\n
 """
 
@@ -130,6 +130,10 @@ class PostProcessor(ABC):
     ### OASCS Postprocessor Class
     FINISH DOCTSTRINGS
     """
+
+    def __init__(self, directory_or_file_path: Path, output_directory: Path):
+        self.directory_or_file_path = directory_or_file_path
+        self.output_directory = output_directory
 
     @abstractmethod
     def load_file(self, file_path: Path, overwrite: bool = False):
