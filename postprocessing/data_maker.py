@@ -64,6 +64,7 @@ class DataMaker(PostProcessor):
     def __init__(
         self,
         directory_or_file_path: Path,
+        output_directory: Path,
         dataset_numbers: Optional[dict[StatusType, int]] = None,
         dataset_ratios: Optional[dict[StatusType, float]] = None,
         category_column: Optional[str] = None,
@@ -73,6 +74,7 @@ class DataMaker(PostProcessor):
         dataset_priority: Optional[PriorityType] = ("train", "test", "validation"),
     ):
         self.directory_or_file_path = directory_or_file_path
+        self.output_directory = output_directory
         self.dataset_numbers = dataset_numbers
         self.dataset_ratios = dataset_ratios
         self.category_column = category_column
@@ -99,15 +101,12 @@ class DataMaker(PostProcessor):
         self.sampled_training: dict = {}
         self.sampled_test: dict = {}
         self.sampled_validation: dict = {}
-        self.training_data: pd.DataFrame = pd.DataFrame()
-        self.test_data: pd.DataFrame = pd.DataFrame()
-        self.validation_data: pd.DataFrame = pd.DataFrame()
-        self.number_of_sequences: int = 0
         self.sequence_tracker: SequenceTracker = SequenceTracker()
         self.change_dataset_priority = dataset_priority
         self.adjustment_ratio: float = 1.0
         self.total_sampleable_sequences: int = 0
-        self.processed_datasets: Union[dict[pd.DataFrame], None] = None
+        self._processed_datasets: dict[SequenceIdType, pd.DataFrame] = {}
+        self._output_file_paths: dict[SequenceIdType, Path] = {}
 
         if self.category_ratios is not None:
             self.sampling_mode = "category"
@@ -138,43 +137,29 @@ class DataMaker(PostProcessor):
         # Get all files to process
         self.get_files_list(self.directory_or_file_path)
 
-        """
-        TO DO:
-            - THIS BELOW SHOULDN'T WORK WHEN NO CATEGORY_COLUMN IS PROVIDED
-            - THE ELSE BLOCK NEEDS TO LOAD ALL FILES AS WELL
-        """
-        if self.category_column is not None:
-            tqdm.write("Collecting categories...")
-            self.get_categories_and_sequence_number()
-        else:
-            # Need at least one category for sequence_tracker
-            self.category_set.update("NA")
+        if self.verbose:
+            tqdm.write("Creating sequence tracker...")
+        self.create_sequence_tracker()
 
         # Print categories if verbose
         if self.verbose:
             self.print_data_info()
 
-        if self.verbose:
-            tqdm.write("Creating sequence tracker...")
-        self.create_sequence_tracker()
-
-        for dataset in self.change_dataset_priority:
+        for dataset_name in self.change_dataset_priority:
             if (
-                dataset in self.dataset_numbers.keys()
-                or dataset in self.dataset_ratios.keys()
+                dataset_name in self.dataset_numbers.keys()
+                or dataset_name in self.dataset_ratios.keys()
             ):
                 if self.verbose:
-                    tqdm.write(f"Sampling {dataset} data...")
-                self.sample_data(data_type={dataset})
+                    tqdm.write(f"Sampling {dataset_name} data...")
+                self.sample_data(data_type={dataset_name})
 
-        assembly_datastructure = self.restructure_sequence_tracker_data()
-        """
-        TO DO:
-            - FINISH ASSEMBLE DATASETS
-            - FINISH SAVE DATASETS
-        """
+        assembly_datastructure = self.sequence_tracker.restructure_data()
         self.assemble_datasets(assembly_datastructure=assembly_datastructure)
-        return
+
+        # Save data as csv
+        for key, value in self._output_file_paths:
+            self.save_file(value, self._processed_datasets[key])
 
     def assemble_datasets(
         self,
@@ -183,28 +168,23 @@ class DataMaker(PostProcessor):
         """
         ## Assembles datasets into DataFrames
         """
+        data_dict = defaultdict(list)
 
-    def restructure_sequence_tracker_data(self) -> dict[str, dict[str, list]]:
-        """
-        ## Restructures Sequence Tracker data to efficiently assemble datasets
-        Iterates through sequence tracker identities and sorts them by file.
-        Then opens each file and appends the data to a dataframe for each dataset.
-        The assembly datastructure is dict[file_id, dict[status, sequence_id]].
-        """
-        assembly_datastructure = defaultdict(lambda: defaultdict(list))
+        # Open each file in order
+        for file_index, dataset in assembly_datastructure.items():
+            data = self.load_file(self.all_files[file_index])
+            # Add rows from the dataset to the dict according to the key
+            for dataset_key, dataset_value in dataset.items():
+                data_dict[dataset_key].append(data.iloc[dataset_value])
 
-        # Iterate through the tracker
-        for file_id, sequence_id in self.sequence_tracker.identities.keys():
-            # Grab the sequence status
-            current_sequence_status = self.sequence_tracker.identities[
-                (file_id, sequence_id)
-            ].status
-            # Keep only the IDs with the proper identity
-            if current_sequence_status == "keep" or current_sequence_status == "delete":
-                continue
-            # Extend the dictionary
-            assembly_datastructure[file_id][current_sequence_status].extend(sequence_id)
-        return assembly_datastructure
+        # Finally create dataframes in one go, which is more efficient
+        for key, value in data_dict.items():
+            self._processed_datasets[key] = pd.concat(value, ignore_index=True)
+            self._processed_datasets[key].reset_index(drop=True, inplace=True)
+            # Lastly set the path for the dataset
+            self._output_file_paths[key] = Path(
+                self.output_directory, f"{key}_dataset.csv"
+            )
 
     def get_files_list(self, directory_or_file_path: Path):
         """
@@ -216,41 +196,12 @@ class DataMaker(PostProcessor):
             files = directory_or_file_path.glob("**/*")
             self.all_files.extend(files)
 
-    def get_categories_and_sequence_number(
-        self,
-    ):
-        """
-        ## Gets categoy and sequence number information on the dataset
-        Calculates the number of sequences and gathers all the categories in the specified column.
-        """
-        for file in self.all_files:
-            # Read file
-            data = pd.read_csv(
-                filepath_or_buffer=file,
-                index_col=0,
-                dtype=DTYPE_DICT,
-                usecols=[self.category_column, "Chain"],
-            )
-            # Resetting index to make sure they are unique
-            data.reset_index(inplace=True)
-            # Grabbing unique categories
-            self.category_set.update(list(data[self.category_column].unique()))
-            # Calculate number of sequences
-            self.number_of_sequences += len(data)
-
     def print_data_info(self):
         """
         ## Prints information about the dataset
         """
-        if self.number_of_sequences < 1:
-            for file in self.all_files:
-                data = pd.read_csv(
-                    filepath_or_buffer=file, dtype=DTYPE_DICT, usecols=[0]
-                )
-                self.number_of_sequences += len(data)
-
         tqdm.write("Categories: ", self.category_set)
-        tqdm.write("Total number of sequences: ", self.number_of_sequences)
+        tqdm.write("Total number of sequences: ", self.total_sampleable_sequences)
 
     def create_sequence_tracker(
         self,
@@ -264,7 +215,7 @@ class DataMaker(PostProcessor):
             # Read file
             data = self.load_file(file)
             data["file_id"] = file_id
-            sequence_ids: list[tuple[str, str]] = list(zip(data.file_id, data.index))
+            sequence_ids: list[SequenceIdType] = list(zip(data.file_id, data.index))
             data["Tuple"] = sequence_ids
 
             self.sequence_tracker.add_default_identities(sequence_ids, "keep")
@@ -273,20 +224,21 @@ class DataMaker(PostProcessor):
             if self.category_column is None:
                 self.sequence_tracker.categories["NA"].extend(sequence_ids)
                 continue
+            else:
+                # Grabbing unique categories
+                self.category_set.update(list(data[self.category_column].unique()))
 
-            # Go through all categories and write to the sequence tracker
-            for category in self.category_set:
-                category_indices = data.Tuple[
-                    data[self.category_column] == category
-                ].to_list()
-                if category_indices:
-                    self.sequence_tracker.categories[category].extend(sequence_ids)
-                    self.sequence_tracker.categories["NA"].extend(sequence_ids)
+                # Go through all categories and write to the sequence tracker
+                for category in self.category_set:
+                    category_indices = data.Tuple[
+                        data[self.category_column] == category
+                    ].to_list()
+                    if category_indices:
+                        self.sequence_tracker.categories[category].extend(sequence_ids)
+                        self.sequence_tracker.categories["NA"].extend(sequence_ids)
 
-            # Keep track of all possible sampleable sequences in the tracker
-            self.total_sampleable_sequences = len(
-                self.sequence_tracker.categories["NA"]
-            )
+        # Keep track of all possible sampleable sequences in the tracker
+        self.total_sampleable_sequences = len(self.sequence_tracker.categories["NA"])
 
     def sample_data(self, data_type: StatusType) -> pd.DataFrame:
         """
@@ -566,10 +518,10 @@ class DataMaker(PostProcessor):
 
 if __name__ == "__main__":
     from copy import deepcopy
-    import numpy as np
 
     data_making_test = DataMaker(
         directory_or_file_path=Path("./"),
+        output_directory=Path("./"),
         dataset_ratios={"train": 0.8, "test": 0.1, "validate": 0.1},
         category_column="species",
         category_ratios={
@@ -759,4 +711,4 @@ if __name__ == "__main__":
     data_making_test.sample_data(data_type="train")
     data_making_test.sample_data(data_type="test")
     data_making_test.sample_data(data_type="validate")
-    print(data_making_test.restructure_sequence_tracker_data())
+    print(data_making_test.sequence_tracker.restructure_data())
