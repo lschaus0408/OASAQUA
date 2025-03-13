@@ -98,7 +98,6 @@ class DataMaker(PostProcessor):
             )
             self.dataset_numbers = None
 
-        self.all_files: list = []
         self.category_set: set = set()
         self.sequence_tracker: dict[str, list[tuple[int, int]]] = {}
         self.sampled_training: dict = {}
@@ -223,16 +222,6 @@ class DataMaker(PostProcessor):
                     self.output_directory, f"{key}_chunk_{save_iteration_dict[key]}.csv"
                 )
                 self.save_file(file_path=output_file_name, data=last_dataframe)
-
-    def get_files_list(self, directory_or_file_path: Path):
-        """
-        ## Populates all_files list with file paths
-        """
-        if directory_or_file_path.is_file():
-            self.all_files.append(directory_or_file_path)
-        else:
-            files = directory_or_file_path.glob("**/*")
-            self.all_files.extend(files)
 
     def print_data_info(self):
         """

@@ -137,6 +137,8 @@ class PostProcessor(ABC):
         self.directory_or_file_path = directory_or_file_path
         self.output_directory = output_directory
 
+        self.all_files: list[Path] = []
+
     @abstractmethod
     def load_file(self, file_path: Path, overwrite: bool = False):
         """
@@ -154,3 +156,13 @@ class PostProcessor(ABC):
         """
         ## Process file according to the processor.
         """
+
+    def get_files_list(self, directory_or_file_path: Path):
+        """
+        ## Populates all_files list with file paths
+        """
+        if directory_or_file_path.is_file():
+            self.all_files.append(directory_or_file_path)
+        else:
+            files = directory_or_file_path.glob("**/*")
+            self.all_files.extend(files)
