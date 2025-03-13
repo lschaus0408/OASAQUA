@@ -110,3 +110,25 @@ class SequenceTracker:
                     e,
                 )
             return
+
+    def restructure_data(
+        self,
+    ) -> dict[str, dict[str, list]]:
+        """
+        ## Restructures object data to assemble datasets from files
+        Iterates through sequence tracker identities and sorts them by file,
+        then by dataset, then by list of indices.
+        The output datastructure is dict[file_id, dict[status, sequence_id]].
+        """
+        assembly_datastructure = defaultdict(lambda: defaultdict(list))
+
+        # Iterate through the tracker
+        for file_id, sequence_id in self.identities.keys():
+            # Grab the sequence status
+            current_sequence_status = self.identities[(file_id, sequence_id)].status
+            # Keep only the IDs with the proper identity
+            if current_sequence_status == "keep" or current_sequence_status == "delete":
+                continue
+            # Extend the dictionary
+            assembly_datastructure[file_id][current_sequence_status].extend(sequence_id)
+        return assembly_datastructure
