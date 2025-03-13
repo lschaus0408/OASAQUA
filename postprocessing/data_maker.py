@@ -72,6 +72,7 @@ class DataMaker(PostProcessor):
         category_ratios: Optional[dict[str, float]] = None,
         verbose: Optional[bool] = False,
         dataset_priority: Optional[PriorityType] = ("train", "test", "validation"),
+        maximum_file_size_gb: Optional[int] = None,
     ):
         self.directory_or_file_path = directory_or_file_path
         self.output_directory = output_directory
@@ -107,6 +108,7 @@ class DataMaker(PostProcessor):
         self.total_sampleable_sequences: int = 0
         self._processed_datasets: dict[SequenceIdType, pd.DataFrame] = {}
         self._output_file_paths: dict[SequenceIdType, Path] = {}
+        self.maximum_file_size = maximum_file_size_gb
 
         if self.category_ratios is not None:
             self.sampling_mode = "category"
@@ -127,6 +129,7 @@ class DataMaker(PostProcessor):
         """
         ## Saves file(s)
         """
+        data.reset_index(drop=True, inplace=True)
         data.to_csv(path_or_buf=file_path)
 
     def process(self):
@@ -154,20 +157,23 @@ class DataMaker(PostProcessor):
                 self.sample_data(data_type={dataset_name})
 
         assembly_datastructure = self.sequence_tracker.restructure_data()
-        self.assemble_datasets(assembly_datastructure=assembly_datastructure)
+        self.assemble_datasets_and_save(assembly_datastructure=assembly_datastructure)
 
         # Save data as csv
         for key, value in self._output_file_paths:
             self.save_file(value, self._processed_datasets[key])
 
-    def assemble_datasets(
+    def assemble_datasets_and_save(
         self,
         assembly_datastructure: dict[str, dict[str, list]],
     ) -> None:
         """
         ## Assembles datasets into DataFrames
+        This method also saves the dataframe as a csv if it exceeds
+        the maximum_file_size threshold.
         """
         data_dict = defaultdict(list)
+        save_iteration_dict = defaultdict(int)
 
         # Open each file in order
         for file_index, dataset in assembly_datastructure.items():
@@ -176,14 +182,45 @@ class DataMaker(PostProcessor):
             for dataset_key, dataset_value in dataset.items():
                 data_dict[dataset_key].append(data.iloc[dataset_value])
 
-        # Finally create dataframes in one go, which is more efficient
+                def save_if_exceeds_size(
+                    data: list[pd.DataFrame], name: SequenceIdType
+                ) -> list[pd.DataFrame]:
+                    """
+                    ## Saves file if it exceeds the maximum file size
+                    """
+                    # Create dataframe
+                    current_dataframe = pd.concat(data, ignore_index=True)
+                    current_dataframe = current_dataframe.astype(dtype=DTYPE_DICT)
+                    # Get size in GB
+                    current_dataframe_size = current_dataframe.memory_usage(
+                        deep=True
+                    ).sum() / (1024**3)
+                    if current_dataframe_size >= self.maximum_file_size:
+                        output_file_name = Path(
+                            self.output_directory,
+                            f"{name}_chunk_{save_iteration_dict[name]}.csv",
+                        )
+                        self.save_file(
+                            file_path=output_file_name, data=current_dataframe
+                        )
+                        return []
+                    # Return original if it doesnt exceed size
+                    return data
+
+                data_dict[dataset_key] = save_if_exceeds_size(
+                    data=data_dict[dataset_key], name=dataset_key
+                )
+                if not data_dict[dataset_key]:
+                    save_iteration_dict[dataset_key] += 1
+
+        # Finally create remaining dataframes and save
         for key, value in data_dict.items():
-            self._processed_datasets[key] = pd.concat(value, ignore_index=True)
-            self._processed_datasets[key].reset_index(drop=True, inplace=True)
-            # Lastly set the path for the dataset
-            self._output_file_paths[key] = Path(
-                self.output_directory, f"{key}_dataset.csv"
-            )
+            if value:
+                last_dataframe = pd.concat(value, ignore_index=True)
+                output_file_name = Path(
+                    self.output_directory, f"{key}_chunk_{save_iteration_dict[key]}.csv"
+                )
+                self.save_file(file_path=output_file_name, data=last_dataframe)
 
     def get_files_list(self, directory_or_file_path: Path):
         """
