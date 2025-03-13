@@ -10,8 +10,10 @@ reconstruct sequences, cluster sequences + sample etc.\n
 
 from pathlib import Path
 from abc import ABC, abstractmethod
+from typing import Union
 
 import pandas as pd
+import numpy.typing as npt
 
 DTYPE_DICT = {
     "sequence": "string",
@@ -142,7 +144,7 @@ class PostProcessor(ABC):
         """
 
     @abstractmethod
-    def save_file(self, file_path: Path, data: pd.DataFrame):
+    def save_file(self, file_path: Path, data: Union[pd.DataFrame, npt.ArrayLike]):
         """
         ## Method to save the file.
         """
