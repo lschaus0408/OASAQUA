@@ -146,7 +146,9 @@ class PostProcessor(ABC):
         """
 
     @abstractmethod
-    def save_file(self, file_path: Path, data: Union[pd.DataFrame, npt.ArrayLike, str]):
+    def save_file(
+        self, file_path: Path, data: Union[pd.DataFrame, npt.ArrayLike, dict]
+    ):
         """
         ## Method to save the file.
         """
