@@ -139,3 +139,10 @@ def ordered_sequence_ids(sequence_ids=list[SequenceIdType]) -> list[SequenceIdTy
     ## Orders SequenceIDs
     """
     return sorted(sequence_ids, key=lambda item: (item[0], item[1]))
+
+
+def sequence_id_to_str(sequence_id: SequenceIdType) -> str:
+    """
+    ## Converts SequenceID to a string
+    """
+    return f"{sequence_id[0]}_{sequence_id[1]}"
