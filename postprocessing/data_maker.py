@@ -196,7 +196,10 @@ class DataMaker(PostProcessor):
                     current_dataframe_size = current_dataframe.memory_usage(
                         deep=True
                     ).sum() / (1024**3)
-                    if current_dataframe_size >= self.maximum_file_size:
+                    if (
+                        self.maximum_file_size is not None
+                        and current_dataframe_size >= self.maximum_file_size
+                    ):
                         output_file_name = Path(
                             self.output_directory,
                             f"{name}_chunk_{save_iteration_dict[name]}.csv",
