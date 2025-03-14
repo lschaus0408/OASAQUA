@@ -26,7 +26,7 @@ import numpy.typing as npt
 from tqdm import tqdm
 
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
-from postprocessing.sequence_tracker import SequenceIdType
+from postprocessing.sequence_tracker import SequenceIdType, ordered_sequence_ids
 
 
 class EncodeOneHot(PostProcessor):
@@ -105,8 +105,38 @@ class EncodeOneHot(PostProcessor):
             dtype=DTYPE_DICT,
         )
 
-    def save_file(self, file_path: Path, data: npt.ArrayLike):
-        return
+    def save_file(self, file_path: Path, data: dict):
+        """
+        ## Saves files
+        Saves file in the format provided by the save_format attribute.
+        """
+        saving_factory = {"json": self._save_as_json, "numpy": self._save_as_numpy}
+        saving_factory[self.save_format](file_path=file_path, data=data)
+
+    @staticmethod
+    def _save_as_json(file_path: Path, data: dict):
+        """
+        ## Saves the file as json
+        """
+        json_string = json.dumps(data)
+        file_path = Path(file_path, ".json")
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(json_string)
+
+    @staticmethod
+    def _save_as_numpy(file_path: Path, data: dict):
+        """
+        ## Saves the file as npz
+        """
+        # Order the keys
+        ordered_data_keys = ordered_sequence_ids(data.keys())
+
+        # Extract the data into an array
+        data_values = [data[key] for key in ordered_data_keys]
+
+        # Save the array
+        file_path = Path(file_path, ".npy")
+        np.save(file=file_path, arr=data_values)
 
     def process(self):
         """

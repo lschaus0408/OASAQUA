@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Literal, TypeAlias, Iterable
 from collections import defaultdict
 
-SequenceIdType: TypeAlias = tuple[str, str]
+SequenceIdType: TypeAlias = tuple[int, int]
 StatusType: TypeAlias = Literal[
     "delete", "keep", "train", "test", "validate", "sampled"
 ]
@@ -132,3 +132,10 @@ class SequenceTracker:
             # Extend the dictionary
             assembly_datastructure[file_id][current_sequence_status].extend(sequence_id)
         return assembly_datastructure
+
+
+def ordered_sequence_ids(sequence_ids=list[SequenceIdType]) -> list[SequenceIdType]:
+    """
+    ## Orders SequenceIDs
+    """
+    return sorted(sequence_ids, key=lambda item: (item[0], item[1]))
