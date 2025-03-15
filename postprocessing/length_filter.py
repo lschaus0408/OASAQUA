@@ -79,15 +79,22 @@ class LengthFilter(PostProcessor):
         for file in self.all_files:
             data = self.load_file(file_path=file)
 
+            # Copy data in order to keep the original file
+            filtered_data = data.copy()
+
             if self.max_length is not None:
-                data = data[data["Sequence_aa"].str.len() <= self.max_length]
+                filtered_data = filtered_data[
+                    filtered_data["Sequence_aa"].str.len() <= self.max_length
+                ]
             if self.min_lenght is not None:
-                data = data[data["Sequence_aa"].str.len() >= self.min_lenght]
+                filtered_data = filtered_data[
+                    filtered_data["Sequence_aa"].str.len() >= self.min_lenght
+                ]
 
             if self.max_cdr3_length is not None:
-                self._filter_by_cdr3_lenght(data=data)
+                filtered_data = self._filter_by_cdr3_lenght(data=filtered_data)
 
-            self.save_file(file_path=file, data=data)
+            self.save_file(file_path=file, data=filtered_data)
 
     def _filter_by_cdr3_lenght(self, data: pd.DataFrame) -> pd.DataFrame:
         """
