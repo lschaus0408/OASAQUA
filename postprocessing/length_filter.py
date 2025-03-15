@@ -8,10 +8,13 @@ Splits the dataset into training, test, and validation sets.
 """
 
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
-from postprocessing.post_processing import PostProcessor
+from abnumber import Chain, ChainParseError
+
+from postprocessing.post_processing import PostProcessor, DTYPE_DICT
 
 
 class LengthFilter(PostProcessor):
@@ -20,17 +23,94 @@ class LengthFilter(PostProcessor):
     Removes sequences outside of the length specifications of this program.
     Sequences can be filtered if they are larger than N, or smaller than M,
     or outside of N and M.
-    FINISH DOCSTRINGS
     """
 
-    def __init__(self):
-        return
+    def __init__(
+        self,
+        directory_or_file_path: Path,
+        output_directory: Optional[Path] = None,
+        max_lenght: Optional[int] = None,
+        min_length: Optional[int] = None,
+        max_cdr3_length: Optional[int] = None,
+    ):
+        super().__init__(
+            directory_or_file_path=directory_or_file_path,
+            output_directory=output_directory,
+        )
+        assert (
+            max_lenght is not None or min_length is not None
+        ), "One of the two, \
+            or both, of max_length and min_length needs to be provided!"
+
+        self.max_length = max_lenght
+        self.min_lenght = min_length
+        self.max_cdr3_length = max_cdr3_length
 
     def load_file(self, file_path: Path, overwrite=False):
-        return
+        """
+        ## Loads file
+        """
+        return pd.read_csv(
+            filepath_or_buffer=file_path,
+            index_col=0,
+            dtype=DTYPE_DICT,
+        )
 
     def save_file(self, file_path: Path, data: pd.DataFrame):
-        return
+        """
+        ## Saves file
+        """
+        # If an output directory is provided, it will save the file there
+        if self.output_directory is not None:
+            file_name = file_path.name
+            file_path = Path(self.output_directory, file_name)
+
+        data.reset_index(drop=True, inplace=True)
+        data.to_csv(path_or_buf=file_path)
 
     def process(self):
-        return
+        """
+        ## Processes the files
+        Loads all files iteratively, filters them and then saves them.
+        """
+        # Load list of files
+        self.get_files_list(directory_or_file_path=self.directory_or_file_path)
+
+        for file in self.all_files:
+            data = self.load_file(file_path=file)
+
+            if self.max_length is not None:
+                data = data[data["Sequence_aa"].str.len() <= self.max_length]
+            if self.min_lenght is not None:
+                data = data[data["Sequence_aa"].str.len() >= self.min_lenght]
+
+            if self.max_cdr3_length is not None:
+                self._filter_by_cdr3_lenght(data=data)
+
+            self.save_file(file_path=file, data=data)
+
+    def _filter_by_cdr3_lenght(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        ## Removes sequences with CDR3 lengths that are too long
+        """
+        if "cdr3_aa" in data.columns:
+            data = data[data["cdr3_aa"].str.len() <= self.max_cdr3_length]
+            return data
+
+        # Else, extract cd3 information
+        sequences = data["Sequence_aa"].to_list()
+        cdr3_list = []
+        for sequence in sequences:
+
+            # Extract cd3 sequence using abnumber
+            try:
+                chain = Chain(sequence=sequence, scheme="imgt")
+                cdr3_list.append(chain.cdr3_seq)
+
+            # If it's not recognized as an antibody, skip
+            except ChainParseError:
+                cdr3_list.append("")
+
+        data["cdr3_aa"] = cdr3_list
+        # Call again to filter
+        self._filter_by_cdr3_lenght(data=data)
