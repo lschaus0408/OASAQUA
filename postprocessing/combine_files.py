@@ -4,12 +4,12 @@ Module can download different datasets from the OAS and write them into a compre
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
 region. OAS is a database from the University of Oxford Dept. of Statistics(doi: 10.1002/pro.4205)\n
 ---------------------------------- Combine Files Post Processing ---------------------------------\n
-This module is used to combine files from OAS API to all have a similar size. This is important to 
+This module is used to combine files from OAS API to all have a similar size. This is important to
 be able to reliably use the antibody viability module. If the files for that module are too small,
 the sample to figure out the mutation rate is too small making filtering noisy. If the file is too
-big, antibody viability might crash due to lacking memory to process everything. If the files 
-are all approximately the same size, the antibody viability module can always be run with 
-the same number of CPUs and batch sizes. 
+big, antibody viability might crash due to lacking memory to process everything. If the files
+are all approximately the same size, the antibody viability module can always be run with
+the same number of CPUs and batch sizes.
 This can also be used to package data into desired data chunks for model training.\n
 """
 
@@ -37,17 +37,20 @@ class CombineFiles(PostProcessor):
     ### Args:
         \t directory {Path} -- Path to the directory to be processsed
         \t output_filename_prefix {str} -- Desired name for the output files
-        \t file_size {int} -- Upper limit for file size in KB
+        \t file_size {int} -- Upper limit for file size in GB
     """
 
     def __init__(
         self,
         directory: Path,
+        output_directory: Path,
         output_filename_prefix: str = "OAS_Combined_Files",
-        desired_file_size: int = 150_000,
+        desired_file_size_gb: int = 1.5,
     ) -> None:
-        self.directory = directory
-        self.desired_file_size = desired_file_size
+        super().__init__(
+            directory_or_file_path=directory, output_directory=output_directory
+        )
+        self.desired_file_size = desired_file_size_gb
         self.output_filename = output_filename_prefix
         self.too_small = {}
         self.too_big = {}
@@ -72,12 +75,11 @@ class CombineFiles(PostProcessor):
         desired file size. The one's in the too large category are split into smaller files.
         """
         # Grab all files inside directory
-        all_files = self.directory.glob("**/*")
-        all_files = [file for file in all_files if file.is_file()]
+        self.get_files_list(directory_or_file_path=self.directory_or_file_path)
 
         # Sort files
         tqdm.write("Sorting Files...")
-        self.sort_files(list_of_files=all_files)
+        self.sort_files(list_of_files=self.all_files)
 
         # Process big files
         tqdm.write("Processing Large Files...")
@@ -89,7 +91,7 @@ class CombineFiles(PostProcessor):
 
         # Clean up
         tqdm.write("Cleaning Up Old Files...")
-        for file in tqdm(all_files):
+        for file in tqdm(self.all_files):
             file.unlink()
 
     def process_big_files(self):
@@ -172,7 +174,7 @@ class CombineFiles(PostProcessor):
         ## Sorts Files into "too big" or "too small"
         """
         for file in list_of_files:
-            size = file.stat().st_size / 1024
+            size = file.stat().st_size / (1024**3)
             if size > self.desired_file_size:
                 self.too_big[file] = size
             else:
@@ -184,12 +186,14 @@ class CombineFiles(PostProcessor):
         """
         filename = self.output_filename + "_" + str(self._fileindex).zfill(5) + ".csv"
         self._fileindex += 1
-        return self.directory / filename
+        return self.output_directory / filename
 
 
 if __name__ == "__main__":
     directory_test = Path("/home/lschaus/vscode/data/OAS_API_Processed/")
     A = CombineFiles(
-        directory=directory_test, output_filename_prefix="OAS_Combined_Files_3"
+        directory=directory_test,
+        output_directory=directory_test,
+        output_filename_prefix="OAS_Combined_Files_3",
     )
     A.process()
