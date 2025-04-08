@@ -37,7 +37,18 @@ cluster_lists <- data.BCR.clusters(paired_sample_list,
                                    overlap_thre = arguments$overlap_thre,
                                    consensus_thre = arguments$consensus_thre,
                                    paired = arguments$paired)
-for (x in seq_along(cluster_lists)) {
-  file_name <- paste0("file_", x, ".csv")
-  write.csv(cluster_lists[[x]], file = file_name, row.names = FALSE)
+#
+#
+print(names(cluster_lists))
+for (file_index in seq_along(cluster_lists)) {
+  for (clonotype_index in seq_along(cluster_lists[[file_index]])) {
+    file_name <- paste0("../Example_fastBCR/file_",
+                        names(cluster_lists)[file_index],
+                        "_clonotype_",
+                        clonotype_index,
+                        ".csv")
+    write.csv(cluster_lists[[file_index]][[clonotype_index]],
+              file = file_name,
+              row.names = FALSE)
+  }
 }
