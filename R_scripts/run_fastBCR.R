@@ -4,7 +4,7 @@
 library("optparse")
 library(fastBCR)
 #
-#
+# Argument Parser
 options <- OptionParser()
 options <- add_option(options, c("-d", "--directory"),
                       type = "character",
@@ -28,7 +28,7 @@ options <- add_option(options, c("-n", "--consensus_thre"),
                       help = "Consensus Threshold")
 arguments <- parse_args(options)
 #
-#
+# Run FastBCR
 raw_sample_list <- data.load(folder_path = arguments$directory,
                              storage_format = "csv")
 paired_sample_list <- paired.preprocess(raw_sample_list)
@@ -38,8 +38,7 @@ cluster_lists <- data.BCR.clusters(paired_sample_list,
                                    consensus_thre = arguments$consensus_thre,
                                    paired = arguments$paired)
 #
-#
-print(names(cluster_lists))
+# Save Files
 for (file_index in seq_along(cluster_lists)) {
   for (clonotype_index in seq_along(cluster_lists[[file_index]])) {
     file_name <- paste0("../Example_fastBCR/file_",
