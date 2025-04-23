@@ -72,7 +72,7 @@ class DataMaker(PostProcessor):
         category_ratios: Optional[dict[str, float]] = None,
         verbose: Optional[bool] = False,
         dataset_priority: Optional[PriorityType] = ("train", "test", "validation"),
-        maximum_file_size_gb: Optional[int] = None,
+        maximum_file_size_gb: Optional[float] = None,
     ):
         super().__init__(
             directory_or_file_path=directory_or_file_path,
@@ -173,6 +173,33 @@ class DataMaker(PostProcessor):
         This method also saves the dataframe as a csv if it exceeds
         the maximum_file_size threshold.
         """
+
+        def save_if_exceeds_size(
+            data: list[pd.DataFrame], name: SequenceIdType
+        ) -> list[pd.DataFrame]:
+            """
+            ## Saves file if it exceeds the maximum file size
+            """
+            # Create dataframe
+            current_dataframe = pd.concat(data, ignore_index=True)
+            current_dataframe = current_dataframe.astype(dtype=DTYPE_DICT)
+            # Get size in GB
+            current_dataframe_size = current_dataframe.memory_usage(deep=True).sum() / (
+                1024**3
+            )
+            if (
+                self.maximum_file_size is not None
+                and current_dataframe_size >= self.maximum_file_size
+            ):
+                output_file_name = Path(
+                    self.output_directory,
+                    f"{name}_chunk_{save_iteration_dict[name]}.csv",
+                )
+                self.save_file(file_path=output_file_name, data=current_dataframe)
+                return []
+            # Return original if it doesnt exceed size
+            return data
+
         data_dict = defaultdict(list)
         save_iteration_dict = defaultdict(int)
 
@@ -182,34 +209,6 @@ class DataMaker(PostProcessor):
             # Add rows from the dataset to the dict according to the key
             for dataset_key, dataset_value in dataset.items():
                 data_dict[dataset_key].append(data.iloc[dataset_value])
-
-                def save_if_exceeds_size(
-                    data: list[pd.DataFrame], name: SequenceIdType
-                ) -> list[pd.DataFrame]:
-                    """
-                    ## Saves file if it exceeds the maximum file size
-                    """
-                    # Create dataframe
-                    current_dataframe = pd.concat(data, ignore_index=True)
-                    current_dataframe = current_dataframe.astype(dtype=DTYPE_DICT)
-                    # Get size in GB
-                    current_dataframe_size = current_dataframe.memory_usage(
-                        deep=True
-                    ).sum() / (1024**3)
-                    if (
-                        self.maximum_file_size is not None
-                        and current_dataframe_size >= self.maximum_file_size
-                    ):
-                        output_file_name = Path(
-                            self.output_directory,
-                            f"{name}_chunk_{save_iteration_dict[name]}.csv",
-                        )
-                        self.save_file(
-                            file_path=output_file_name, data=current_dataframe
-                        )
-                        return []
-                    # Return original if it doesnt exceed size
-                    return data
 
                 data_dict[dataset_key] = save_if_exceeds_size(
                     data=data_dict[dataset_key], name=dataset_key
