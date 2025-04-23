@@ -14,10 +14,14 @@ options <- add_option(options, c("-p", "--paired"),
                       action = "store_true",
                       default = FALSE,
                       help = "Set flag to run fastBCR-p")
-options <- add_option(options, c("-c", "--cluster_thre"),
+options <- add_option(options, c("-c", "--min_depth_thre"),
                       type = "integer",
                       default = 3,
-                      help = "Cluster Threshold")
+                      help = "Minimum Depth Threshold")
+options <- add_option(options, c("-x", "--max_depth_thre"),
+                      type = "integer",
+                      default = 1000,
+                      help = "Maximum Depth Threshold")
 options <- add_option(options, c("-o", "--overlap_thre"),
                       type = "numeric",
                       default = 0.1,
@@ -33,7 +37,8 @@ raw_sample_list <- data.load(folder_path = arguments$directory,
                              storage_format = "csv")
 paired_sample_list <- paired.preprocess(raw_sample_list)
 cluster_lists <- data.BCR.clusters(paired_sample_list,
-                                   cluster_thre = arguments$cluster_thre,
+                                   min_depth_thre = arguments$min_depth_thre,
+                                   max_depth_thre = arguments$max_depth_thre,
                                    overlap_thre = arguments$overlap_thre,
                                    consensus_thre = arguments$consensus_thre,
                                    paired = arguments$paired)
@@ -41,7 +46,8 @@ cluster_lists <- data.BCR.clusters(paired_sample_list,
 # Save Files
 for (file_index in seq_along(cluster_lists)) {
   for (clonotype_index in seq_along(cluster_lists[[file_index]])) {
-    file_name <- paste0("../Example_fastBCR/file_",
+    file_name <- paste0(arguments$directory,
+                        "/file_",
                         names(cluster_lists)[file_index],
                         "_clonotype_",
                         clonotype_index,
