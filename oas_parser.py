@@ -4,15 +4,19 @@ Module can download different datasets from the OAS and write them into a compre
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
 region. OAS is a database from the University of Oxford Dept. of Statistics (doi: 10.1002/pro.4205)
 --------------------------------------- Argument Parser -------------------------------------------
-This module is the main program of OAS API. It manages the communication between the different 
-modules to create the dataset. It will use oasdownload to download the files, csvreader to process 
-the data and filemanager to save the data/add data to existing files. Main is also responsible for 
+This module is the main program of OAS API. It manages the communication between the different
+modules to create the dataset. It will use oasdownload to download the files, csvreader to process
+the data and filemanager to save the data/add data to existing files. Main is also responsible for
 communicating with the post-processing tools.
 """
 
 import re
 import ast
+import json
+import yaml
 
+from pathlib import Path
+from typing import Literal
 from argparse import ArgumentParser
 
 
@@ -128,7 +132,38 @@ def oas_parser() -> ArgumentParser:
         choices=["keep", "delete", "move"],
         help="Determines what to do with raw files from download.",
     )
+
+    parser.add_argument(
+        "-f",
+        "file_config",
+        type=str,
+        help="Path to JSON configuration file for OASCS. When used, ignores all other arguments.",
+    )
     return parser
+
+
+def load_config(
+    path: Path, file_format: Literal["json", "yaml", "yml"] = "yaml"
+) -> dict:
+    """
+    ## Loads the OASCS Config
+    Config file should be in json format.
+    Returns a dict
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"Config file not found at path: {path}")
+
+    if file_format == "json":
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+
+    if file_format == "yaml" or file_format == "yml":
+        with open(path, "r", encoding="utf=8") as file:
+            return yaml.safe_load(file)
+
+    raise ValueError(
+        f"Argument 'format' needs to be 'json' or 'yaml' not: {file_format}"
+    )
 
 
 if __name__ == "__main__":
