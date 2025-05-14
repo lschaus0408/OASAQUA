@@ -1,11 +1,11 @@
-""" 
+"""
 ---------------------------------- Observed Antibody Space API -----------------------------------
 Module can download different datasets from the OAS and write them into a compressed file for local
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
 region. OAS is a database from the University of Oxford Dept. of Statistics (doi:10.1002/pro.4205)
 -------------------------------------- OAS Download Module ---------------------------------------
-This module should download files from the OAS server. The user can provide keys for the queries and 
-the module will download all the files provided by that set of keys. The raw data files will be 
+This module should download files from the OAS server. The user can provide keys for the queries and
+the module will download all the files provided by that set of keys. The raw data files will be
 saved in a temp folder with a naming structure that is recognized by the csvreader module.
 """
 
@@ -16,7 +16,7 @@ import warnings
 from random import sample
 from os import listdir, rename
 from os.path import isfile, join
-from typing import Optional, Union
+from typing import Optional, Union, Literal
 from urllib.error import URLError
 from pathlib import Path
 from copy import deepcopy
@@ -56,7 +56,7 @@ class DownloadOAS:
     def __init__(
         self,
         file_destination: Path,
-        paired: bool,
+        paired: Literal["paired", "unpaired"],
         query_check_file_path: Path = Path("./files/query_check_dictionary.json"),
         super_query_file_path: Path = Path("./files/super_queries.json"),
         search: Optional[tuple[tuple[str, str]]] = None,
@@ -64,11 +64,15 @@ class DownloadOAS:
     ):
         self.query_check_file_path = query_check_file_path
         self.super_query_file_path = super_query_file_path
-        self.paired = paired
         self.search = search
         self.files = []
         self.file_destination = file_destination
         self.sample_size = sample_size
+
+        if paired == "paired":
+            self.paired = True
+        else:
+            self.paired = False
 
         if not self.file_destination.is_dir():
             self.file_destination.mkdir()
