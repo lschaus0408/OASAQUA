@@ -10,14 +10,28 @@ the data and filemanager to save the data/add data to existing files. Main is al
 communicating with the post-processing tools.
 """
 
+from pathlib import Path
+from typing import Literal, Any, TypeAlias
+from argparse import ArgumentParser
+from dataclasses import dataclass
+
 import re
 import ast
 import json
 import yaml
 
-from pathlib import Path
-from typing import Literal
-from argparse import ArgumentParser
+FileFormatType: TypeAlias = Literal["json", "yaml", "yml"]
+
+
+@dataclass
+class Run:
+    """
+    ## Object representing the config of an OASCS Run
+    """
+
+    run_number: int
+    query: dict[str, Any]
+    postprocessors: list[dict[str, dict[str, Any]]]
 
 
 def argparse_tuple_type(argument: str) -> tuple:
@@ -137,14 +151,13 @@ def oas_parser() -> ArgumentParser:
         "-f",
         "file_config",
         type=str,
-        help="Path to JSON configuration file for OASCS. When used, ignores all other arguments.",
+        help="Path to JSON or YAML configuration file for OASCS. When used, ignores all other arguments.",
     )
+
     return parser
 
 
-def load_config(
-    path: Path, file_format: Literal["json", "yaml", "yml"] = "yaml"
-) -> dict:
+def load_config(path: Path, file_format: FileFormatType = "yaml") -> dict:
     """
     ## Loads the OASCS Config
     Config file should be in json format.
@@ -166,5 +179,62 @@ def load_config(
     )
 
 
+def parse_config_file(
+    config: dict[str, list[dict[str, Any]]], file_format: FileFormatType = "yaml"
+) -> list[Run]:
+    """
+    ## Parses OASCS YAML Configs
+    """
+    runs: list[Run] = []
+
+    # Iterate through runs
+    for run in config["Runs"]:
+        # Get basic config
+        run_number = run["RunNumber"]
+        query_config = run["Query"]
+
+        if file_format == "yaml" or file_format == "yml":
+            # Get Attributes as flat dict
+            attributes = {}
+            for item in query_config.get("Attributes", []):
+                attributes.update(item)
+            query_config["Attributes"] = attributes
+
+        # Get Post Processing
+        postprocessing_config = run.get("Postprocessing")
+        if postprocessing_config:
+            postprocessors = parse_postprocessing_info(postprocessing_config)
+        else:
+            postprocessors = None
+
+        configured_run = Run(
+            run_number=run_number, query=query_config, postprocessors=postprocessors
+        )
+        runs.append(configured_run)
+    return runs
+
+
+def parse_postprocessing_info(postprocessing_config: dict) -> list[dict]:
+    """
+    ## Parses postprocessing
+    """
+    postprocessors = []
+    # Get Program Names and args
+    for program_name, argument_list in postprocessing_config.items():
+        postprocessing_arguments = {}
+        if argument_list not in (None, ""):  # Skip empty
+            if isinstance(argument_list, list):
+                for argument in argument_list:
+                    postprocessing_arguments.update(argument)
+            elif isinstance(argument_list, dict):
+                postprocessing_arguments = argument_list
+        postprocessors.append({program_name: postprocessing_arguments})
+
+    return postprocessors
+
+
 if __name__ == "__main__":
     print("This is the OAS Parser!")
+    FILE_PATH = Path("/home/lschaus/vscode/query_file_example.json")
+    data = load_config(FILE_PATH, "json")
+    print(parse_config_file(data, "json"))
