@@ -191,17 +191,20 @@ def parse_config_file(
     for run in config["Runs"]:
         # Get basic config
         run_number = run["RunNumber"]
-        query_config = run["Query"]
+        if run.get("Query"):
+            query_config = run["Query"]
 
-        if file_format == "yaml" or file_format == "yml":
-            # Get Attributes as flat dict
-            attributes = {}
-            for item in query_config.get("Attributes", []):
-                attributes.update(item)
-            query_config["Attributes"] = attributes
+            if file_format == "yaml" or file_format == "yml":
+                # Get Attributes as flat dict
+                attributes = {}
+                for item in query_config.get("Attributes", []):
+                    attributes.update(item)
+                query_config["Attributes"] = attributes
+        else:
+            query_config = None
 
         # Get Post Processing
-        postprocessing_config = run.get("Postprocessing")
+        postprocessing_config = run.get("PostProcessing")
         if postprocessing_config:
             postprocessors = parse_postprocessing_info(postprocessing_config)
         else:
@@ -221,6 +224,9 @@ def parse_postprocessing_info(postprocessing_config: dict) -> list[dict]:
     postprocessors = []
     # Get Program Names and args
     for program_name, argument_list in postprocessing_config.items():
+        if program_name == "InputDir":
+            postprocessors.append({program_name: argument_list})
+            continue
         postprocessing_arguments = {}
         if argument_list not in (None, ""):  # Skip empty
             if isinstance(argument_list, list):
