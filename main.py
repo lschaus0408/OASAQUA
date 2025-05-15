@@ -37,7 +37,7 @@ from oas_parser import (
 )
 
 
-CATEGORY: TypeAlias = Literal[
+Category: TypeAlias = Literal[
     "Chain",
     "Isotype",
     "Age",
@@ -50,7 +50,7 @@ CATEGORY: TypeAlias = Literal[
     "Vaccine",
     "Subject",
 ]
-KEY: TypeAlias = Literal[
+Key: TypeAlias = Literal[
     "Heavy",
     "Light",
     "Bulk",
@@ -166,7 +166,7 @@ KEY: TypeAlias = Literal[
     "Sheep-Erythrocytes",
 ]
 
-METADATA: TypeAlias = Literal[
+Metadata: TypeAlias = Literal[
     "Run",
     "Link",
     "Author",
@@ -184,7 +184,7 @@ METADATA: TypeAlias = Literal[
     "Total Sequence",
 ]
 
-DATA: TypeAlias = Literal[
+Data: TypeAlias = Literal[
     "full",
     "fwr",
     "cdr",
@@ -294,9 +294,9 @@ class API:
         filemanager: FileManager,
         csvreader: CSVReader,
         downloader: DownloadOAS,
-        query: tuple[tuple[CATEGORY, KEY], ...],
-        metadata: list[METADATA],
-        data: list[DATA],
+        query: tuple[tuple[Category, Key], ...],
+        metadata: list[Metadata],
+        data: list[Data],
         database: Literal["paired", "unpaired"] = "unpaired",
         keep_downloads: Literal["keep", "delete", "move"] = "delete",
     ):
@@ -704,13 +704,13 @@ if __name__ == "__main__":
 
     # Parse inputs
     if args.file_config is not None:
-        config = config_from_file(arguments=args)
+        main_config = config_from_file(arguments=args)
 
     else:
-        config = config_from_cli(arguments=args)
+        main_config = config_from_cli(arguments=args)
 
     # Run Program Loop
-    for run in config:
+    for run in main_config:
 
         # Run main program
         if run.query is not None:
