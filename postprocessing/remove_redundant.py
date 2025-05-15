@@ -4,7 +4,7 @@ Module can download different datasets from the OAS and write them into a compre
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
 region. OAS is a database from the University of Oxford Dept. of Statistics(doi: 10.1002/pro.4205)\n
 ---------------------------- Remove Redundant Sequences Post Processing --------------------------\n
-Removes all redundant sequences from OAS API files. Can either run on a directory level or on single 
+Removes all redundant sequences from OAS API files. Can either run on a directory level or on single
 files.\n
 """
 
@@ -26,10 +26,12 @@ class RemoveRedundant(PostProcessor):
 
     def __init__(
         self,
-        directory_or_file: Path,
+        directory_or_file_path: Path,
         mode: Optional[Literal["directory", "file"]] = None,
     ) -> None:
-        self.path = directory_or_file
+        super().__init__(
+            directory_or_file_path=directory_or_file_path, output_directory=""
+        )
         self.mode = mode
         self.hashes = {}
 
@@ -56,7 +58,7 @@ class RemoveRedundant(PostProcessor):
         }
         # Figure out the processing mode
         if self.mode is None:
-            if self.path.is_file():
+            if self.directory_or_file_path.is_file():
                 tqdm.write("Processing a file for redundant sequences...")
                 self.mode = "file"
             else:
@@ -73,7 +75,7 @@ class RemoveRedundant(PostProcessor):
         """
         # Load data, else statement allows for directory processing
         if filename is None:
-            data = self.load_file(self.path)
+            data = self.load_file(self.directory_or_file_path)
             data.reset_index(inplace=True)
         else:
             data = self.load_file(filename)
@@ -90,7 +92,7 @@ class RemoveRedundant(PostProcessor):
 
         data = data.drop(drop_indexes)
         if filename is None:
-            self.save_file(data=data, file_path=self.path)
+            self.save_file(data=data, file_path=self.directory_or_file_path)
         else:
             self.save_file(data=data, file_path=filename)
 
@@ -98,7 +100,7 @@ class RemoveRedundant(PostProcessor):
         """
         ## Processes directory of OAS API files
         """
-        all_files = self.path.glob("**/*")
+        all_files = self.directory_or_file_path.glob("**/*")
         all_files = [file for file in all_files if file.is_file()]
 
         for file in tqdm(all_files):
@@ -106,6 +108,4 @@ class RemoveRedundant(PostProcessor):
 
 
 if __name__ == "__main__":
-    directory = Path("/home/lschaus/vscode/data/OAS_API_Processed/")
-    A = RemoveRedundant(directory_or_file=directory)
-    A.process()
+    print("This is the remove redundant post processor!")

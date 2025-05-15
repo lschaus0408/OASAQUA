@@ -42,13 +42,14 @@ class CombineFiles(PostProcessor):
 
     def __init__(
         self,
-        directory: Path,
+        directory_or_file_path: Path,
         output_directory: Path,
         output_filename_prefix: str = "OAS_Combined_Files",
         desired_file_size_gb: int = 1.5,
     ) -> None:
         super().__init__(
-            directory_or_file_path=directory, output_directory=output_directory
+            directory_or_file_path=directory_or_file_path,
+            output_directory=output_directory,
         )
         self.desired_file_size = desired_file_size_gb
         self.output_filename = output_filename_prefix
@@ -192,7 +193,7 @@ class CombineFiles(PostProcessor):
 if __name__ == "__main__":
     directory_test = Path("/home/lschaus/vscode/data/OAS_API_Processed/")
     A = CombineFiles(
-        directory=directory_test,
+        directory_or_file_path=directory_test,
         output_directory=directory_test,
         output_filename_prefix="OAS_Combined_Files_3",
     )

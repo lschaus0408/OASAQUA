@@ -74,7 +74,20 @@ class AntibodyViability(PostProcessor):
 
     _assign_germline = True
 
-    def __init__(self, data: Optional[pd.DataFrame] = None) -> None:
+    def __init__(
+        self,
+        directory_or_file_path: Path,
+        output_directory: Path,
+        data: Optional[pd.DataFrame] = None,
+        filter_strictness: Literal["loose", "strict"] = "loose",
+        batch_size: Union[int, Literal["dynamic"]] = "dynamic",
+        ncpus: int = 1,
+        max_batch_size: int = 10000,
+    ) -> None:
+        super().__init__(
+            directory_or_file_path=directory_or_file_path,
+            output_directory=output_directory,
+        )
         if data is not None:
             assert isinstance(
                 data, pd.DataFrame
@@ -82,6 +95,10 @@ class AntibodyViability(PostProcessor):
         self.data = data
         self.path: Optional[Path] = None
         self.tracker: Optional[SequenceTracker] = None
+        self.filter_strictness = filter_strictness
+        self.batch_size = batch_size
+        self.ncpus = ncpus
+        self.max_batch_size = max_batch_size
 
     def load_file(self, file_path: Path, overwrite: bool = False):
         """
@@ -125,12 +142,9 @@ class AntibodyViability(PostProcessor):
         self.data = self.data[~self.data["Sequence_aa"].isin(self.tracker.deleted)]
         tqdm.write("Finished removing sequences!")
 
+    # PROCESS SHOULDN'T HAVE ANY ARGUMENTS
     def process(
         self,
-        filter_strictness: Literal["loose", "strict"] = "loose",
-        batch_size: Union[int, Literal["dynamic"]] = "dynamic",
-        ncpus: int = 1,
-        max_batch_size: int = 10000,
     ):
         """
         ## Processes currently loaded OAS API file
@@ -150,6 +164,30 @@ class AntibodyViability(PostProcessor):
                 Sets upper bound on batch size to not overload memory.
         ### Updates:
                 \tself.data {DataFrame} -- Dataframe containing filtered sequences
+        """
+
+        # Load if valid path has been provided
+        if self.directory_or_file_path:
+            self.get_files_list(directory_or_file_path=self.directory_or_file_path)
+
+        for file in self.all_files:
+            self.load_file(file_path=file)
+            self.filter_sequences(
+                filter_strictness=self.filter_strictness,
+                batch_size=self.batch_size,
+                ncpus=self.ncpus,
+                max_batch_size=self.max_batch_size,
+            )
+
+    def filter_sequences(
+        self,
+        filter_strictness: Literal["loose", "strict"],
+        batch_size: Union[int, Literal["dynamic"]],
+        ncpus: int,
+        max_batch_size: int,
+    ):
+        """
+        ## Performs filtering of sequences
         """
         tqdm.write("Starting antibody viability filtering...")
         # Set batch size, dynamic is especially useful for files with few sequences
@@ -531,28 +569,29 @@ class AntibodyViability(PostProcessor):
 
 
 if __name__ == "__main__":
-    oas_files_path = Path("/central/groups/smayo/lschaus/OAS_Files").glob("**/*")
-    list_of_files = [file for file in oas_files_path if file.is_file()]
+    print("This is the antibody viability file")
+    # oas_files_path = Path("/central/groups/smayo/lschaus/OAS_Files").glob("**/*")
+    # list_of_files = [file for file in oas_files_path if file.is_file()]
 
-    for file in list_of_files:
-        file_size = file.stat().st_size / 1024
-        if file_size < 1000:
-            NCPUS_TEST = 2
-            MAX_BATCH_SIZE_TEST = 1000
-        elif file_size < 300_000:
-            NCPUS_TEST = 32
-            MAX_BATCH_SIZE_TEST = 1000
-        else:
-            NCPUS_TEST = 10
-            MAX_BATCH_SIZE_TEST = 500
-        A = AntibodyViability()
-        A.load_file(file)
-        A.process(
-            batch_size="dynamic", ncpus=NCPUS_TEST, max_batch_size=MAX_BATCH_SIZE_TEST
-        )
-        save_path = Path("/central/groups/smayo/lschaus/OAS_Processed")
-        save_path = save_path / file.name
-        A.save_file(save_path, A.data)
+    # for file in list_of_files:
+    #     file_size = file.stat().st_size / 1024
+    #     if file_size < 1000:
+    #         NCPUS_TEST = 2
+    #         MAX_BATCH_SIZE_TEST = 1000
+    #     elif file_size < 300_000:
+    #         NCPUS_TEST = 32
+    #         MAX_BATCH_SIZE_TEST = 1000
+    #     else:
+    #         NCPUS_TEST = 10
+    #         MAX_BATCH_SIZE_TEST = 500
+    #     A = AntibodyViability(directory_or_file_path="", output_directory="")
+    #     A.load_file(file)
+    #     A.process(
+    #         batch_size="dynamic", ncpus=NCPUS_TEST, max_batch_size=MAX_BATCH_SIZE_TEST
+    #     )
+    #     save_path = Path("/central/groups/smayo/lschaus/OAS_Processed")
+    #     save_path = save_path / file.name
+    #     A.save_file(save_path, A.data)
 
     # # First batch
     # A = AntibodyViability()
