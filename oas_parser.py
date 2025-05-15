@@ -23,8 +23,25 @@ import yaml
 FileFormatType: TypeAlias = Literal["json", "yaml", "yml"]
 
 
+class ConfigValidationError(Exception):
+    """
+    ## Exception raised for errors in the config file
+    """
+
+    def __init__(self, message: str, config: str = None):
+        self.message = message
+        self.config = config
+        super().__init__(self.message)
+
+    def __str__(self):
+        if self.config:
+            return f"[{self.config}] {self.message}"
+        else:
+            return self.message
+
+
 @dataclass
-class Run:
+class OASRun:
     """
     ## Object representing the config of an OASCS Run
     """
@@ -32,6 +49,31 @@ class Run:
     run_number: int
     query: dict[str, Any]
     postprocessors: list[dict[str, dict[str, Any]]]
+    # See sheet
+    default_queries = {"ProcessingMode": "Default", "KeepDownloads": "Default"}
+
+    def __repr__(self):
+        return f"Run number: {self.run_number} \nQuery: {self.query} \
+        \nPostprocessors: {self.postprocessors}"
+
+    def fill_defaults(self):
+        """
+        ## Adds default values to missing queries and postprocessors
+        """
+        for key, value in self.default_queries.items():
+            self.query.setdefault(key, value)
+
+    def validate_run(self):
+        """
+        ## Raises Exception if Config file is incorrect
+        """
+        if self.query is not None:
+            try:
+                self.query["Database"]
+            except KeyError as error:
+                raise ConfigValidationError(
+                    "Database needs to be specified in config", "database"
+                ) from error
 
 
 def argparse_tuple_type(argument: str) -> tuple:
@@ -151,7 +193,8 @@ def oas_parser() -> ArgumentParser:
         "-f",
         "file_config",
         type=str,
-        help="Path to JSON or YAML configuration file for OASCS. When used, ignores all other arguments.",
+        help="Path to JSON or YAML configuration file for OASCS. "
+        "When used, ignores all other arguments.",
     )
 
     return parser
@@ -181,11 +224,11 @@ def load_config(path: Path, file_format: FileFormatType = "yaml") -> dict:
 
 def parse_config_file(
     config: dict[str, list[dict[str, Any]]], file_format: FileFormatType = "yaml"
-) -> list[Run]:
+) -> list[OASRun]:
     """
     ## Parses OASCS YAML Configs
     """
-    runs: list[Run] = []
+    runs: list[OASRun] = []
 
     # Iterate through runs
     for run in config["Runs"]:
@@ -210,7 +253,7 @@ def parse_config_file(
         else:
             postprocessors = None
 
-        configured_run = Run(
+        configured_run = OASRun(
             run_number=run_number, query=query_config, postprocessors=postprocessors
         )
         runs.append(configured_run)
@@ -224,9 +267,6 @@ def parse_postprocessing_info(postprocessing_config: dict) -> list[dict]:
     postprocessors = []
     # Get Program Names and args
     for program_name, argument_list in postprocessing_config.items():
-        if program_name == "InputDir":
-            postprocessors.append({program_name: argument_list})
-            continue
         postprocessing_arguments = {}
         if argument_list not in (None, ""):  # Skip empty
             if isinstance(argument_list, list):
@@ -241,6 +281,3 @@ def parse_postprocessing_info(postprocessing_config: dict) -> list[dict]:
 
 if __name__ == "__main__":
     print("This is the OAS Parser!")
-    FILE_PATH = Path("/home/lschaus/vscode/query_file_example.json")
-    data = load_config(FILE_PATH, "json")
-    print(parse_config_file(data, "json"))
