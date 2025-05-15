@@ -4,9 +4,9 @@ Module can download different datasets from the OAS and write them into a compre
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
 region. OAS is a database from the University of Oxford Dept. of Statistics (doi: 10.1002/pro.4205)
 ------------------------------------------- OAS Main -----------------------------------------------
-This module is the main program of OAS API. It manages the communication between the different 
-modules to create the dataset. It will use oasdownload to download the files, csvreader to process 
-the data and filemanager to save the data/add data to existing files. Main is also responsible for 
+This module is the main program of OAS API. It manages the communication between the different
+modules to create the dataset. It will use oasdownload to download the files, csvreader to process
+the data and filemanager to save the data/add data to existing files. Main is also responsible for
 communicating with the post-processing tools.
 """
 
@@ -14,9 +14,12 @@ communicating with the post-processing tools.
 
 import os
 import warnings
+import importlib.util
+
 from os.path import join
 from pathlib import Path
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, Optional, TypeAlias
+from argparse import ArgumentParser
 
 from tqdm import tqdm
 
@@ -25,8 +28,16 @@ from modules.filemanager import FileManager
 from modules.helper_functions import check_query
 from modules.oasdownload import DownloadOAS
 from postprocessing.post_processing import PostProcessor
+from oas_parser import (
+    oas_parser,
+    load_config,
+    parse_config_file,
+    OASRun,
+    ConfigValidationError,
+)
 
-CATEGORY = Literal[
+
+CATEGORY: TypeAlias = Literal[
     "Chain",
     "Isotype",
     "Age",
@@ -39,7 +50,7 @@ CATEGORY = Literal[
     "Vaccine",
     "Subject",
 ]
-KEY = Literal[
+KEY: TypeAlias = Literal[
     "Heavy",
     "Light",
     "Bulk",
@@ -155,7 +166,7 @@ KEY = Literal[
     "Sheep-Erythrocytes",
 ]
 
-METADATA = Literal[
+METADATA: TypeAlias = Literal[
     "Run",
     "Link",
     "Author",
@@ -173,7 +184,7 @@ METADATA = Literal[
     "Total Sequence",
 ]
 
-DATA = Literal[
+DATA: TypeAlias = Literal[
     "full",
     "fwr",
     "cdr",
@@ -259,6 +270,18 @@ DATA = Literal[
     "ANARCI_numbering",
     "ANARCI_status",
 ]
+
+ALL_POSTPROCESSORS = {
+    "AntibodyViability": "./postprocessing/antibody_viability.py",
+    "Cluster": "./postprocessing/cluster.py",
+    "CombineFiles": "./postprocessing/combine_files.py",
+    "DataMaker": "./postprocessing/data_maker.py",
+    "EncodeESM": "./postprocessing/encode_esm.py",
+    "EncodeOneHot": "./postprocessing/encode_one_hot.py",
+    "LengthFilter": "./postprocessing/length_filter.py",
+    "NCCharacters": "./postprocessing/nc_characters.py",
+    "RemoveRedundant": "./postprocessing/remove_redundant.py",
+}
 
 
 class API:
@@ -346,7 +369,7 @@ class API:
     def process_folder(
         self,
         mode: Literal["Individual", "Bulk", "Split"] = "Split",
-        max_file_size: Optional[int] = 4_000_000_000,
+        max_file_size_gb: Optional[int] = 4,
     ):
         """
         ## Method to process the folder of files created by get_OAS_files.
@@ -364,7 +387,7 @@ class API:
                                 'Split' -- Every file is processed into the same
                                         file until a certain file size is reached.
                                         Then a new file is created. \n
-                    \t max_file_size {int} -- Maximum file size in bytes.
+                    \t max_file_size {int} -- Maximum file size in gigabytes.
                                             Only relevant in 'Split' mode.
         """
         # Factory to select correct folder processing method.
@@ -379,13 +402,13 @@ class API:
         # Make sure 'Split' mode is used correctly
         if mode == "Split":
             assert (
-                max_file_size is not None
+                max_file_size_gb is not None
             ), f"File size limit needed for 'Split' mode processing. \
-            Currently max_file_size is set to {max_file_size}."
+            Currently max_file_size is set to {max_file_size_gb}."
             assert (
-                isinstance(max_file_size, int) and max_file_size > 0
+                isinstance(max_file_size_gb, int) and max_file_size_gb > 0
             ), "max_file_size needs to be of type int and greater than 0"
-            processing_mode(max_file_size=max_file_size)
+            processing_mode(max_file_size=max_file_size_gb)
 
         processing_mode()
 
@@ -417,7 +440,7 @@ class API:
             processed_size += self.filemanager.file_size(path=saved_filepath)
 
         tqdm.write(
-            f"Finished processing files! All files together are {processed_size/1048576} MB large."
+            f"Finished processing files! All files together are {processed_size/1024**2} MB large."
         )
 
     def _bulk_processing(self) -> None:
@@ -430,7 +453,8 @@ class API:
         """
         # Warning again just to make sure the user knows what they are doing
         warnings.warn(
-            "This method might make the machine run out of memory!", ResourceWarning
+            "Bulk processing can lead to memory errors on large downloads!",
+            ResourceWarning,
         )
 
         # NEED TO IMPLEMENT
@@ -526,76 +550,174 @@ class API:
                 if file.is_file() and condition in str(file)
             ]
 
-    def post_processing(
-        self,
-    ):
-        """
-        ## Handles Postprocessing Modules
-        --> TO DO:
-        Post Processing factory + imports
-        Run processing
-        """
+
+def config_from_file(arguments: ArgumentParser) -> list[OASRun]:
+    """
+    ## Gets run configs from file
+    """
+    file_path = Path(arguments.file_config)
+    file_format = file_path.suffix
+    config = load_config(path=file_path, file_format=file_format)
+    parsed_config = parse_config_file(config=config, file_format=file_format)
+    return parsed_config
 
 
-if __name__ == "__main__":
-    from oas_parser import oas_parser
-
-    args = oas_parser().parse_args()
-
+def config_from_cli(arguments: ArgumentParser) -> list[OASRun]:
+    """
+    ## Gets run configs from command line
+    """
+    current_run = OASRun(run_number=1, query={}, postprocessors=None)
     # Set the download file reference paths
-    if args.paired:
-        PAIRED = True
+    if arguments.paired:
+        current_run.query["Database"] = "paired"
     else:
-        PAIRED = False
+        current_run.query["Database"] = "unpaired"
 
     # Set the output directory path
-    output_directory = Path(args.output_directory)
+    current_run.query["OutputDir"] = arguments.output_directory
 
     # Set the output filename
-    if args.filename is None:
-        if args.paired:
-            FILENAME = "OAS_Paired_Query"
+    if arguments.filename is None:
+        if arguments.paired:
+            current_run.query["OutputName"] = "OAS_Paired_Query"
         else:
-            FILENAME = "OAS_Unpaired_Query"
+            current_run.query["OutputName"] = "OAS_Unpaired_Query"
     else:
-        FILENAME = args.filename
+        current_run.query["OutputName"] = arguments.filename
 
-    data_arguments = args.data
-    # Translating argument for OAS API to understand
-    data_arguments = [
-        "full" if item == "aa_sequence" else item for item in data_arguments
+    # Setup attributes
+    current_run.query["Attributes"] = arguments.query
+    # Convert to list and change "aa_sequence" to "full"
+    current_run.query["Data"] = [
+        "full" if item == "aa_sequence" else item for item in arguments.data
     ]
+    current_run.query["Metadata"] = arguments.metadata
 
-    if args.processing_mode is None:
-        PROCESSINGMODE = "Individual"
+    # Processing modes
+    if arguments.processing_mode is None:
+        current_run.query["ProcessingMode"] = "Default"
     else:
-        PROCESSINGMODE = args.processing_mode
-
-    if args.keep_downloads is None:
-        KEEPDOWNLOADS = "delete"
+        current_run.query["ProcessingMode"] = arguments.processing_mode
+    if arguments.keep_downloads is None:
+        current_run.query["KeepDownloads"] = "Default"
     else:
-        KEEPDOWNLOADS = args.keep_downloads
+        current_run.query["KeepDownloads"] = arguments.keep_downloads
+    return [current_run]
 
-    reader = CSVReader(output_directory)
+
+def run_main(oasrun: OASRun):
+    """
+    ## Runs main program
+    """
+    output_directory = Path(oasrun.query["OutputDir"])
+    reader = CSVReader(path=output_directory)
     manager = FileManager(
-        path=Path(output_directory),
-        data=reader,
-        filename=FILENAME,
+        path=output_directory, data=reader, filename=oasrun.query["OutputName"]
     )
-    DOWNLOADER = DownloadOAS(
-        paired=PAIRED,
-        file_destination=output_directory,
+    downloader = DownloadOAS(
+        paired=oasrun.query["Database"], file_destination=output_directory
     )
     api = API(
         filemanager=manager,
         csvreader=reader,
-        downloader=DOWNLOADER,
-        query=args.query,
-        metadata=args.metadata,
-        data=data_arguments,
-        keep_downloads=KEEPDOWNLOADS,
+        downloader=downloader,
+        query=oasrun.query["Attributes"],
+        metadata=oasrun.query["Metadata"],
+        data=oasrun.query["Data"],
+        keep_downloads=oasrun.query["KeepDownloads"],
     )
-
     api.get_oas_files()
-    api.process_folder(mode=PROCESSINGMODE)
+    api.process_folder(mode=oasrun.query["ProcessingMode"])
     api.downloader_factory()()
+    return api
+
+
+def run_postprocessing(oasrun: OASRun, api: Optional[API] = None):
+    """
+    ## Runs postprocessing
+    """
+    # Check if api has been passed to get directory information
+    if api is None:
+        # Throw error if input isn't provided
+        try:
+            input_file_path = Path(oasrun.postprocessors[0]["Path"]["Input"])
+        except KeyError as error:
+            raise ConfigValidationError(
+                "Directory to target for postprocessing needs to be specified", "Path"
+            ) from error
+
+        if "Output" in oasrun.postprocessors[0]["Path"]:
+            output_file_path = oasrun.postprocessors[0]["Path"]["Output"]
+        else:
+            output_file_path = input_file_path / "postprocessed"
+
+    # Else get it from the file
+    else:
+        input_file_path = api.downloader.file_destination
+        output_file_path = input_file_path / "postprocessed"
+
+    # Go through postprocessors
+    for postprocessor in oasrun.postprocessors:
+        # Path is independent of other postprocessors
+        if "Path" in postprocessor:
+            continue
+        # Go through PostProcessors in Config and run them with args provided
+        for class_name, class_path in ALL_POSTPROCESSORS.items():
+            if class_name in postprocessor:
+                cls = import_class_from_file(class_name, Path(class_path))
+                postprocessing_instance: PostProcessor = cls(
+                    directory_or_file_path=input_file_path,
+                    output_directory=output_file_path,
+                    **postprocessor.values(),
+                )
+                postprocessing_instance.process()
+        input_file_path = output_file_path
+
+
+def import_class_from_file(class_name: str, class_path: Path):
+    """
+    ## Import the class 'class_name' from class_path
+    """
+    # Get aboluste path and module name
+    class_path = class_path.resolve()
+    module_name = class_path.stem
+
+    # Load module
+    spec = importlib.util.spec_from_file_location(module_name, str(class_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot find module at path: {class_path}")
+
+    # Create module and execute it
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # Return the specified class
+    try:
+        cls = getattr(module, class_name)
+        return cls
+    except AttributeError as error:
+        raise ImportError(f"Class {class_name} not found in {class_path}") from error
+
+
+if __name__ == "__main__":
+    args = oas_parser().parse_args()
+
+    # Parse inputs
+    if args.file_config is not None:
+        config = config_from_file(arguments=args)
+
+    else:
+        config = config_from_cli(arguments=args)
+
+    # Run Program Loop
+    for run in config:
+
+        # Run main program
+        if run.query is not None:
+            run_object = run_main(oasrun=run)
+
+            # Run postprocessing if specified
+            if run.postprocessors is not None:
+                run_postprocessing(oasrun=run, api=run_object)
+        else:
+            run_postprocessing(oasrun=run)
