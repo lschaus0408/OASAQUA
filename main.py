@@ -469,20 +469,6 @@ class API:
         """
         raise NotImplementedError("Method has not been implemented yet")
 
-    def add_file(self):
-        """
-        ## Method that calls the file manager and adds new data to the provided csv.
-        """
-        # NEED TO IMPLEMENT
-        raise NotImplementedError("Method has not been implemented yet")
-
-    def process_file(self, processor: PostProcessor):
-        """
-        ## Method that calls the post processor provided and reprocesses the data.
-        """
-        # NEED TO IMPLEMENT
-        raise NotImplementedError("Method has not been implemented yet")
-
     def downloader_factory(self) -> Callable:
         """
         ## Factory for what to do with the downloaded files after processing.
@@ -605,7 +591,7 @@ def config_from_cli(arguments: ArgumentParser) -> list[OASRun]:
     return [current_run]
 
 
-def run_main(oasrun: OASRun):
+def run_main(oasrun: OASRun) -> OASRun:
     """
     ## Runs main program
     """
