@@ -4,19 +4,22 @@ Module can download different datasets from the OAS and write them into a compre
 storage. Files can be separated into paired and unpaired sequences as well as by their antibody
 region. OAS is a database from the University of Oxford Dept. of Statistics (doi: 10.1002/pro.4205)
 -------------------------------------- File Manager Module -----------------------------------------
-This module takes a CSVReader object and turns it into a file. The file manager can merge multiple 
-objects into one file of a given approximate size. When the file exists and/or an update to the 
+This module takes a CSVReader object and turns it into a file. The file manager can merge multiple
+objects into one file of a given approximate size. When the file exists and/or an update to the
 files is necessary, objects can be written into existing files to the desired size.
 """
 
 from __future__ import annotations
+
+import math
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
-from csvreader import CSVReader
+from modules.reader import CSVReader
 
 
 @dataclass
@@ -48,7 +51,7 @@ class FileManager:
         """
         return pd.concat([self.data.table, cls.data.table], ignore_index=True)  # type: ignore
 
-    def save_as_csv(self, max_file_size: Optional[int] = None):
+    def save_as_csv(self, max_file_size_gb: Optional[int] = None):
         """
         ## Saves the data stored in CSVReader as a csv file if the file is empty.
         If the file contains data then the size is checked. If adding the data
@@ -57,25 +60,36 @@ class FileManager:
         In future the CSVReader should be split such that the files size comes as close
         as possible to the self.filesize.
         ### Args:
-            \tmax_file_size {int} -- Maximum allowed file size in bytes.
+            \tmax_file_size {int} -- Maximum allowed file size in gigabytes.
                     \tIf the file size exceeds this value, then the file is shortened until
                     \tthe final file size is reached. In this case multiple files will be saved
                     \tto disk.\n
 
         """
-        # STILL HAVE TO IMPLEMENT THE SPLIT DATASET FUNCTION USING MAX_FILE_SIZE
         assert self.data is not None, "No data as been loaded into self.data"
-        path_name = Path(
-            str(self.path)
-            + "/"
-            + self.filename
-            + "_"
-            + str(self.fileindex).zfill(5)
-            + ".csv"
-        )
 
-        self.data.to_csv(path=path_name)  # type: ignore
-        self.fileindex += 1
+        if max_file_size_gb is None:
+            path_name = self.get_file_name()
+            self.data.to_csv(path=path_name)
+            return
+
+        max_bytes_per_file = max_file_size_gb * (1024**3)
+        file_length = len(self.data.table)
+
+        # Estimate file size
+        approx_row_size = self.data.table.memory_usage(deep=True).sum() / file_length
+        rows_per_file = max(1, int(max_bytes_per_file // approx_row_size))
+
+        # Loop through all chunks to save
+        number_of_chunks = math.ceil(file_length / rows_per_file)
+        for index in range(number_of_chunks):
+            start = index * rows_per_file
+            end = min((index + 1) * rows_per_file, file_length)
+
+            # Save data
+            data_to_save = self.data.table.iloc[start:end].copy()
+            path_name = self.get_file_name()
+            data_to_save.to_csv(path_or_buf=path_name)
 
     def load_file(self, path: str, merge: bool = True) -> None:
         """## Load existing file to add data.
@@ -120,3 +134,21 @@ class FileManager:
 
         else:
             return self.path.stat().st_size
+
+    def get_file_name(
+        self,
+    ) -> Path:
+        """
+        ## Returns a Path to save a file to
+        Increments the file index
+        """
+        path_name = Path(
+            str(self.path)
+            + "/"
+            + self.filename
+            + "_"
+            + str(self.fileindex).zfill(5)
+            + ".csv"
+        )
+        self.fileindex += 1
+        return path_name
