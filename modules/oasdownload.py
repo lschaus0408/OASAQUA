@@ -58,12 +58,10 @@ class DownloadOAS:
         file_destination: Path,
         paired: Literal["paired", "unpaired"],
         query_check_file_path: Path = Path("./files/query_check_dictionary.json"),
-        super_query_file_path: Path = Path("./files/super_queries.json"),
         search: Optional[tuple[tuple[str, str]]] = None,
         sample_size: Union[None, int] = None,
     ):
         self.query_check_file_path = query_check_file_path
-        self.super_query_file_path = super_query_file_path
         self.search = search
         self.files = []
         self.file_destination = file_destination
@@ -81,14 +79,9 @@ class DownloadOAS:
         assert (
             self.query_check_file_path.is_file()
         ), f"File {self.query_check_file_path} not found."
-        assert (
-            self.super_query_file_path.is_file()
-        ), f"File {self.super_query_file_path} not found"
 
         with open(self.query_check_file_path, "r", encoding="utf-8") as infile:
             self.dictionary = json.load(infile)
-        with open(self.super_query_file_path, "r", encoding="utf-8") as infile:
-            self.super_queries = json.load(infile)
 
     def __call__(self):
         """
@@ -117,7 +110,7 @@ class DownloadOAS:
         # Clean up
         self.clean_up()
 
-    def set_search(self, search: tuple[tuple[str, str]]) -> None:
+    def set_search(self, search: list[tuple[tuple[str, str]]]) -> None:
         """Setter for search attribute"""
         self.search = search
 
@@ -167,9 +160,6 @@ class DownloadOAS:
         """
         ## Creates Queries from parsed user-queries
         """
-        # Get super queries
-        self.search = self._split_super_queries(self.search)
-
         queries_list = []
         for pair in self.search:
             # Make sure a category is actually passed
@@ -209,19 +199,6 @@ class DownloadOAS:
                     for query in queries_list:
                         query[pair[0]] = value
         return queries_list
-
-    def _split_super_queries(self, search: tuple[tuple[str, str]]):
-        """
-        ## Splits super queries into individual queries
-        """
-        search: list = list(search)
-        for item in search:
-            if item[0] in self.super_queries:
-                if item[1] in self.super_queries[item[0]]:
-                    for entry in self.super_queries[item[0]][item[1]]:
-                        search.append((item[0], entry))
-                    search.remove((item[0], item[1]))
-        return tuple(search)
 
     @staticmethod
     def _extract_urls(raw_requests: str):
