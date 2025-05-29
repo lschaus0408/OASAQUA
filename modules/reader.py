@@ -353,7 +353,7 @@ class CSVReader:
             current_file_path = Path(__file__).resolve()
             main_directory = current_file_path.parent.parent
             path_allowed_sequences = (
-                main_directory / "files" / "query_check_dictionary.json"
+                main_directory / "files" / "csvreader_sequence_set.json"
             )
         # Define sequence keyword set (I haven't found a more elegant solution yet)
         with open(path_allowed_sequences, "r", encoding="utf-8") as infile:
