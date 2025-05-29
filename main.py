@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 from modules.reader import CSVReader
 from modules.filemanager import FileManager
-from modules.helper_functions import check_query
+from modules.helper_functions import check_query, convert_query_dict_to_tuple
 from modules.oasdownload import DownloadOAS
 from postprocessing.post_processing import PostProcessor
 from oas_parser import (
@@ -612,7 +612,7 @@ def run_main(oasrun: OASRun) -> OASRun:
         filemanager=manager,
         csvreader=reader,
         downloader=downloader,
-        query=oasrun.query["Attributes"],
+        query=convert_query_dict_to_tuple(oasrun.query["Attributes"]),
         metadata=oasrun.query["Metadata"],
         data=oasrun.query["Data"],
         keep_downloads=oasrun.query["KeepDownloads"],
