@@ -225,7 +225,7 @@ def gunzip(gz_file_name: str, work_dir: str) -> None:  # pragma: no cover
             shutil.copyfileobj(in_file, out_file)
 
 
-def check_query(query: tuple[tuple[str, str]], database: str) -> None:
+def check_query(query: dict[str, str], database: str) -> None:
     """
     ## Checks if the query provided is a valid one.
     ### Args:
@@ -238,7 +238,7 @@ def check_query(query: tuple[tuple[str, str]], database: str) -> None:
         data = json.load(infile)
 
     query_dict = data[database]
-    for pair in query:
+    for pair in query.items():
         try:
             assert (
                 pair[1] in query_dict[pair[0]]
