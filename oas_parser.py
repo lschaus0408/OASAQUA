@@ -22,6 +22,57 @@ import yaml
 
 FileFormatType: TypeAlias = Literal["json", "yaml", "yml"]
 
+QUERY_ALIASES = {
+    "Species": {"All": "*"},
+    "BSource": {"All": "*"},
+    "BType": {
+        "All": "*",
+        "CounterSelected": [
+            "Memory-B-Cells",
+            "Plasma-B-Cells",
+            "Naive-B-Cell/Plasmablast",
+            "Plasmablast/Plasma-B-Cells",
+            "Plasmablast",
+            "Germinal-Center-B-Cells",
+            "ASC",
+            "FO-Cells",
+        ],
+        "Immature": ["Pro-B-Cells", "Immature-B-Cells", "Pre-B-Cells", "Pro-B-Cells"],
+    },
+    "Disease": {
+        "All": "*",
+        "Amyloidosis": "Light-Chain-Amyloidosis",
+        "Rhinitis": ["Allergic-Rhinitis-Out-Of-Season", "Allergic-Rhinitis-In-Season"],
+        "Sleep-Apnea": [
+            "Tonsilitis/Obstructive-Sleep-Apnea",
+            "Obstructive-Sleep-Apnea",
+        ],
+        "Allergy": ["Allergy/NoSIT", "Allergy/SIT"],
+        "Autoimmune": [
+            "Allergy/NoSIT",
+            "Allergy/SIT",
+            "MS",
+            "SLE",
+            "MuSK-MG",
+            "AChR-MG",
+        ],
+        "Cancer": ["POEMS", "CLL"],
+        "Celiac-Disease": ["Healthy/Celiac-Disease"],
+        "Infectious-Disease": [
+            "SARS-COV-2",
+            "HIV",
+            "Ebola",
+            "CMV",
+            "HCV",
+            "EBV",
+            "CMV/EBV",
+            "Dengue",
+        ],
+    },
+    "Vaccine": {"All": "*"},
+    "Isotype": {"All": "*"},
+}
+
 
 class ConfigValidationError(Exception):
     """
@@ -241,6 +292,7 @@ def parse_config_file(
                 # Get Attributes as flat dict
                 attributes = {}
                 for item in query_config.get("Attributes", []):
+
                     attributes.update(item)
                 query_config["Attributes"] = attributes
         else:
@@ -258,6 +310,18 @@ def parse_config_file(
         )
         runs.append(configured_run)
     return runs
+
+
+def get_aliases(query: dict[str, str]) -> dict[str, str]:
+    """
+    ## Converts query aliases into real queries
+    """
+    key, value = query.items()[0]
+    try:
+        new_value = QUERY_ALIASES[key][value]
+    except KeyError:
+        new_value = value
+    return {key, new_value}
 
 
 def parse_postprocessing_info(postprocessing_config: dict) -> list[dict]:
