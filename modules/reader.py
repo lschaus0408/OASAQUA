@@ -10,11 +10,8 @@ sequence from different regions of the antibody.
 
 # Preamb
 import json
-import sys
+
 from pathlib import Path
-
-sys.path.insert(0, "../mousify")
-
 from typing import List, Optional
 
 import numpy as np
@@ -31,7 +28,8 @@ from modules.helper_functions import (
 
 class CSVReader:
     """## CSVReader reads a csv file obtained from OAS.
-    Object can separate the header from the rest of the data and extracts the desired information form the file and saves it as a pd.DataFrame.
+    Object can separate the header from the rest of the data and extracts the desired information
+    form the file and saves it as a pd.DataFrame.
     This DataFrame can then be saved as a new csv file.
     ### Args:\n
         \tpath {str} -- path location of the csv file to be read\n
@@ -45,9 +43,9 @@ class CSVReader:
     """
 
     def __init__(self, path: Optional[Path] = None) -> None:
-        self.path = path  # type: Optional[Path]
+        self.path = path
         self.data = {}
-        self.table = None  # type: Optional[pd.DataFrame]
+        self.table: Optional[pd.DataFrame] = None
 
     def __call__(
         self, metadata: Optional[List[str]] = None, data: Optional[List[str]] = None
@@ -100,22 +98,24 @@ class CSVReader:
         """
         if self.path is None:
             raise AssertionError(
-                f"self.path needs to be set to a path with the location of the file to be read. Currently, self.path is set to {self.path}!"
+                f"self.path needs to be set to a path with the location of the file to be read. \
+                Currently, self.path is set to {self.path}!"
             )
         else:
             assert (
                 self.path.is_file()
-            ), f"self.path needs to point towards a file. Currently, self.path is set to {self.path}"
+            ), f"self.path needs to point towards a file. \
+            Currently, self.path is set to {self.path}"
 
     def read_csv(self, keywords: list[str], no_header: bool = True) -> None:
-        """## Method that reads the csv files from OAS and turns them into a pandas dataframe for cleaning.
+        """## Method that reads the csv files
         It is recommended to keep no_header as True, as it can mess with downstream
         processes. Header information can be extracted using the extract_header_info method.
 
         ### Args:\n
                 \tpath {str} -- Path from the working directory to the csv file.\n
                 \tno_header {bool} -- Optional argument to keep the original header of the
-                                        OAS csv files. Recommended to keep this as True for routine use.\n
+                                OAS csv files. Recommended to keep this as True for routine use.\n
 
         ### Updates:\n
                 \tself.table -- Makes table a pandas dataframe that can be cleaned downstream
@@ -143,12 +143,6 @@ class CSVReader:
             "germline_alignment": "string",
             "sequence_alignment_aa": "string",
             "germline_alignment_aa": "string",
-            "v_alignment_start": "Int16",
-            "v_alignment_end": "Int16",
-            "d_alignment_start": "Int16",
-            "d_alignment_end": "Int16",
-            "j_alignment_start": "Int16",
-            "j_alignment_end": "Int16",
             "v_sequence_alignment": "string",
             "v_sequence_alignment_aa": "string",
             "v_germline_alignment": "string",
@@ -312,7 +306,7 @@ class CSVReader:
         translate: int = 0,
         path_allowed_sequences: str = "./OAS_API/files/csvreader_sequence_set.json",
     ) -> None:
-        """## Takes the original dataframe as input and writes the desired data to the object dictionary.
+        """## Writes the desired data to the object dictionary.
 
         ### Args:
                 \tkeyword {str} --  \tKeyword that defined what sequence should be fetched.\n
@@ -338,9 +332,9 @@ class CSVReader:
                                                                         the dataset\n
                                         \t- 'locus':            Locus of the Ab gene (Heavy,
                                                             Lambda or Kappa)\n
-                                        \t- '[v,d,j]_call':     Call ID of the v-,d- or j_sequences\n
-                                        \t- '[v,d,j]_score':    Score of the v-, d- or j_sequences\n
-                                        \t- '[v,d,j]_support':  Support score of the v-, d- or
+                                        \t- '[v,d,j]_call':    Call ID of the v-,d- or j_sequences\n
+                                        \t- '[v,d,j]_score':   Score of the v-, d- or j_sequences\n
+                                        \t- '[v,d,j]_support': Support score of the v-, d- or
                                                             j_sequences\n
                                         \t- '[v,d,j]_identity': Identity % for the v-, d- or
                                                             j_sequences\n
@@ -356,7 +350,7 @@ class CSVReader:
                 \tNone
         """
         # Define sequence keyword set (I haven't found a more elegant solution yet)
-        with open(path_allowed_sequences, "r") as infile:
+        with open(path_allowed_sequences, "r", encoding="utf-8") as infile:
             sequence_set = json.load(infile)
 
         # Make sure keywords are allowed
@@ -407,16 +401,17 @@ class CSVReader:
     def _fetch_ab_sequence(self, translate: int) -> dict:
         """
         ## Adds the fwr, cdr and junction sequences together into one sequence.
-        Depending on the value of translate, it returns the amino acid sequence, DNA sequence, or both.
+        Depending on the value of translate, it returns the amino acid sequence,
+        DNA sequence, or both.
 
         ### Args:
-            \ttranslate {int} -- Defines if the function returns the AA sequence, DNA sequence or both.\n
+            \ttranslate {int} -- Defines if the function return mode\n
                                 \t Possible values:\n
                                 \t- 0: Only DNA Sequence\n
                                 \t- 1: Only AA Sequence\n
                                 \t- 2: Both\n
         ### Returns:
-            \tdict -- Dictionary containing the keyword 'sequence' and/or 'sequence_aa' together with the sequence
+            \tdict -- Dictionary containing the keyword together with the sequence
         """
         # Better do the check again in case someone uses this function
         check_int_in_range(translate)
