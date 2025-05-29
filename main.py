@@ -368,7 +368,7 @@ class API:
 
     def process_folder(
         self,
-        mode: Literal["Individual", "Bulk", "Split"] = "Split",
+        mode: Literal["Individual", "Bulk", "Split"] = "Individual",
         max_file_size_gb: Optional[int] = 4,
     ):
         """
