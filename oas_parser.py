@@ -191,7 +191,7 @@ def oas_parser() -> ArgumentParser:
 
     parser.add_argument(
         "-f",
-        "file_config",
+        "--file_config",
         type=str,
         help="Path to JSON or YAML configuration file for OASCS. "
         "When used, ignores all other arguments.",
