@@ -27,7 +27,7 @@ import requests
 from tqdm import tqdm
 from wget import bar_adaptive, download
 
-from helper_functions import gunzip
+from modules.helper_functions import gunzip
 
 
 class EmptyRequestWarning(Warning):
