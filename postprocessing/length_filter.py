@@ -29,7 +29,7 @@ class LengthFilter(PostProcessor):
         self,
         directory_or_file_path: Path,
         output_directory: Optional[Path] = None,
-        max_lenght: Optional[int] = None,
+        max_length: Optional[int] = None,
         min_length: Optional[int] = None,
         max_cdr3_length: Optional[int] = None,
     ):
@@ -38,11 +38,11 @@ class LengthFilter(PostProcessor):
             output_directory=output_directory,
         )
         assert (
-            max_lenght is not None or min_length is not None
+            max_length is not None or min_length is not None
         ), "One of the two, \
             or both, of max_length and min_length needs to be provided!"
 
-        self.max_length = max_lenght
+        self.max_length = max_length
         self.min_lenght = min_length
         self.max_cdr3_length = max_cdr3_length
 
