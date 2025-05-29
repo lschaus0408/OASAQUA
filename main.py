@@ -597,9 +597,14 @@ def run_main(oasrun: OASRun) -> OASRun:
     """
     output_directory = Path(oasrun.query["OutputDir"])
     reader = CSVReader(path=output_directory)
-    manager = FileManager(
-        path=output_directory, data=reader, filename=oasrun.query["OutputName"]
-    )
+    try:
+        manager = FileManager(
+            path=output_directory, data=reader, filename=oasrun.query["OutputName"]
+        )
+    except KeyError:
+        manager = FileManager(
+            path=output_directory, data=reader, filename="OASCS_Download"
+        )
     downloader = DownloadOAS(
         paired=oasrun.query["Database"], file_destination=output_directory
     )
