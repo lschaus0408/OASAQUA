@@ -542,7 +542,7 @@ def config_from_file(arguments: ArgumentParser) -> list[OASRun]:
     ## Gets run configs from file
     """
     file_path = Path(arguments.file_config)
-    file_format = file_path.suffix
+    file_format = file_path.suffix[1:]
     config = load_config(path=file_path, file_format=file_format)
     parsed_config = parse_config_file(config=config, file_format=file_format)
     return parsed_config
