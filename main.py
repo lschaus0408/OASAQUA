@@ -307,7 +307,10 @@ class API:
         self.database = database
         self.metadata = metadata
         self.data = data
-        self.keep_downloads = keep_downloads
+        if keep_downloads == "Default":
+            self.keep_downloads = "delete"
+        else:
+            self.keep_downloads = keep_downloads
 
     def get_oas_files(self):
         """
@@ -666,7 +669,7 @@ def run_postprocessing(oasrun: OASRun, api: Optional[API] = None):
                 postprocessing_instance: PostProcessor = cls(
                     directory_or_file_path=input_file_path,
                     output_directory=output_file_path,
-                    **postprocessor.values(),
+                    **next(iter(postprocessor.values())),
                 )
                 postprocessing_instance.process()
         input_file_path = output_file_path
