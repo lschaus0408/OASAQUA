@@ -225,7 +225,7 @@ def gunzip(gz_file_name: str, work_dir: str) -> None:  # pragma: no cover
             shutil.copyfileobj(in_file, out_file)
 
 
-def check_query(query: dict[str, str], database: str) -> None:
+def check_query(query: tuple[tuple[str, str]], database: str) -> None:
     """
     ## Checks if the query provided is a valid one.
     ### Args:
@@ -238,7 +238,7 @@ def check_query(query: dict[str, str], database: str) -> None:
         data = json.load(infile)
 
     query_dict = data[database]
-    for pair in query.items():
+    for pair in query:
         try:
             assert (
                 pair[1] in query_dict[pair[0]]
@@ -246,3 +246,15 @@ def check_query(query: dict[str, str], database: str) -> None:
         except IndexError:
             assert pair[0] in query_dict, f"{pair[0]} not found as key in query_dict"
             continue
+
+
+def convert_query_dict_to_tuple(
+    query_dict: dict[str, str],
+) -> tuple[tuple[str, str], ...]:
+    """
+    ## Converts dict from parser to tuple
+    """
+    output_list = []
+    for key, value in query_dict.items():
+        output_list.append((key, value))
+    return tuple(output_list)
