@@ -1,3 +1,7 @@
+"""
+Helper Functions for OASCS
+"""
+
 import gzip
 import json
 import os
@@ -21,9 +25,9 @@ def check_header_request(text: str, request: str, ignore_case: bool = True) -> b
     """
     if ignore_case:
         # re.search returns a match object (Truthy) if match is found and None if no match is found
-        return re.search(r"\b{}\b".format(request), text, re.IGNORECASE) is not None
+        return re.search(rf"\b{request}\b", text, re.IGNORECASE) is not None
     else:
-        return re.search(r"\b{}\b".format(request), text) is not None
+        return re.search(rf"\b{request}\b", text) is not None
 
 
 def translate_dna_rna(sequence: str, codon_table: int) -> str:
@@ -225,17 +229,25 @@ def gunzip(gz_file_name: str, work_dir: str) -> None:  # pragma: no cover
             shutil.copyfileobj(in_file, out_file)
 
 
-def check_query(query: tuple[tuple[str, str]], database: str) -> None:
+def open_query_check_dict() -> dict:
     """
-    ## Checks if the query provided is a valid one.
-    ### Args:
-                \t query {tuple[str,str]} -- Query of categories and keys
+    ## Returns query check dict
     """
     current_file_path = Path(__file__).resolve()
     main_directory = current_file_path.parent.parent
     query_file_path = main_directory / "files" / "query_check_dictionary.json"
     with open(query_file_path, "r", encoding="utf-8") as infile:
         data = json.load(infile)
+    return data
+
+
+def check_query(query: tuple[tuple[str, str]], database: str) -> None:
+    """
+    ## Checks if the query provided is a valid one.
+    ### Args:
+                \t query {tuple[str,str]} -- Query of categories and keys
+    """
+    data = open_query_check_dict()
 
     query_dict = data[database]
     for pair in query:
