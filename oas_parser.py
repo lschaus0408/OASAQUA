@@ -151,7 +151,7 @@ def oas_parser() -> ArgumentParser:
         help="Output directory for downloaded files",
         default="./oas_api_downloads",
     )
-    parser.add_argument("-f", "--filename", help="Prefix for all filenames")
+    parser.add_argument("-n", "--filename", help="Prefix for all filenames")
     parser.add_argument(
         "-q",
         "--query",
