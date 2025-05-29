@@ -618,7 +618,14 @@ def run_main(oasrun: OASRun) -> OASRun:
         keep_downloads=oasrun.query["KeepDownloads"],
     )
     api.get_oas_files()
-    api.process_folder(mode=oasrun.query["ProcessingMode"])
+
+    if (
+        oasrun.query["ProcessingMode"] is None
+        or oasrun.query["ProcessingMode"] == "Default"
+    ):
+        api.process_folder()
+    else:
+        api.process_folder(mode=oasrun.query["ProcessingMode"])
     api.downloader_factory()()
     return api
 
