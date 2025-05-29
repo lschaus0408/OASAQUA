@@ -27,10 +27,12 @@ class RemoveRedundant(PostProcessor):
     def __init__(
         self,
         directory_or_file_path: Path,
+        output_directory: Optional[Path] = None,
         mode: Optional[Literal["directory", "file"]] = None,
     ) -> None:
         super().__init__(
-            directory_or_file_path=directory_or_file_path, output_directory=""
+            directory_or_file_path=directory_or_file_path,
+            output_directory=output_directory,
         )
         self.mode = mode
         self.hashes = {}
