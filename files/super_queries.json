@@ -1,5 +1,15 @@
 {
+    "Species": {
+        "All": "*"
+    },
+    "BSource": {
+        "All": "*"
+    },
+    "Isotype": {
+        "All": "*"
+    },
     "Disease": {
+        "All": "*",
         "Amyloidosis": [
             "Light-Chain-Amyloidosis"
         ],
@@ -27,11 +37,11 @@
             "Allergic-Rhinitis-Out-Of-Season",
             "Allergic-Rhinitis-In-Season"
         ],
-        "Obstructive-Sleep-Apnea": [
+        "Sleep-Apnea": [
             "Obstructive-Sleep-Apnea",
             "Tonsillitis/Obstructive-Sleep-Apnea"
         ],
-        "Tonsillitis": [
+        "Tonsillitis_All": [
             "Tonsillitis",
             "Tonsillitis/Obstructive-Sleep-Apnea"
         ],
@@ -48,13 +58,25 @@
             "AChR-MG"
         ],
         "Cancer": [
-            "POEMS"
+            "POEMS",
+            "CLL"
         ],
         "Celiac": [
             "Healthy/celiac-disease"
+        ],
+        "Infectious-Disease": [
+            "SARS-COV-2",
+            "HIV",
+            "Ebola",
+            "CMV",
+            "HCV",
+            "EBV",
+            "CMV/EBV",
+            "Dengue"
         ]
     },
     "Vaccine": {
+        "All": "*",
         "Bacterial": [
             "MenACWY-conjugate",
             "MenACWY-polysaccharide",
@@ -84,6 +106,22 @@
             "RSV",
             "SARS-COV-2"
         ],
+        "Infectious-Disease": [
+            "HIV",
+            "TIV",
+            "HepB",
+            "pH1N1-AS03",
+            "pH1N1",
+            "Flu",
+            "HepB/HepA/Flu",
+            "RSV",
+            "SARS-COV-2",
+            "MenACWY-conjugate",
+            "MenACWY-polysaccharide",
+            "Tetanus",
+            "NP-CGG/Bacterial-Colonizaion",
+            "E.Coli/Lactobacillus/Clostridia"
+        ],
         "Chicken": [
             "OVA",
             "NP-HEL"
@@ -93,6 +131,7 @@
         ]
     },
     "BType": {
+        "All": "*",
         "Mature": [
             "Memory-B-Cells",
             "Plasmablast",
@@ -102,6 +141,16 @@
             "ASC",
             "Naive-B-Cell/Plasmablast",
             "Germlinal-Center-B-Cells"
+        ],
+        "CounterSelected": [
+            "Memory-B-Cells",
+            "Plasma-B-Cells",
+            "Naive-B-Cell/Plasmablast",
+            "Plasmablast/Plasma-B-Cells",
+            "Plasmablast",
+            "Germinal-Center-B-Cells",
+            "ASC",
+            "FO-Cells"
         ],
         "Immature": [
             "Pro-B-Cells",
