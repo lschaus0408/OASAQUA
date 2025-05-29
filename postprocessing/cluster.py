@@ -107,6 +107,7 @@ class Cluster(PostProcessor):
         """
         ### Save File
         """
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(path_or_buf=file_path)
 
     def process(self):

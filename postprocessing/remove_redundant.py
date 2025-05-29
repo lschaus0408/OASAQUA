@@ -36,6 +36,10 @@ class RemoveRedundant(PostProcessor):
         self.hashes = {}
 
     def save_file(self, file_path: Path, data: pd.DataFrame):
+        """
+        ## Saves the file
+        """
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(path_or_buf=file_path)
 
     def load_file(self, file_path: Path, overwrite: bool = False):

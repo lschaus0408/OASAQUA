@@ -104,6 +104,7 @@ class Encoder(PostProcessor):
         ## Saves files
         Saves file in the format provided by the save_format attribute.
         """
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         saving_factory = {"json": self._save_as_json, "numpy": self._save_as_numpy}
         saving_factory[self.save_format](file_path=file_path, data=data)
 

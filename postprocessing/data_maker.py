@@ -131,6 +131,7 @@ class DataMaker(PostProcessor):
         ## Saves file(s)
         """
         data.reset_index(drop=True, inplace=True)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(path_or_buf=file_path)
 
     def process(self):

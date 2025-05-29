@@ -130,6 +130,7 @@ class AntibodyViability(PostProcessor):
         """
         ## Saves processed file as OAS API file
         """
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(file_path)
 
     def update_data(self):
