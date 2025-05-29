@@ -292,7 +292,7 @@ def parse_config_file(
                 # Get Attributes as flat dict
                 attributes = {}
                 for item in query_config.get("Attributes", []):
-
+                    item = get_aliases(item)
                     attributes.update(item)
                 query_config["Attributes"] = attributes
         else:
@@ -316,12 +316,12 @@ def get_aliases(query: dict[str, str]) -> dict[str, str]:
     """
     ## Converts query aliases into real queries
     """
-    key, value = query.items()[0]
+    ((key, value),) = query.items()
     try:
         new_value = QUERY_ALIASES[key][value]
     except KeyError:
         new_value = value
-    return {key, new_value}
+    return {key: new_value}
 
 
 def parse_postprocessing_info(postprocessing_config: dict) -> list[dict]:
