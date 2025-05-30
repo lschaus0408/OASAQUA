@@ -666,7 +666,7 @@ def run_postprocessing(oasrun: OASRun, api: Optional[API] = None):
             ) from error
 
         if "Output" in oasrun.postprocessors[0]["Path"]:
-            output_file_path = oasrun.postprocessors[0]["Path"]["Output"]
+            output_file_path = Path(oasrun.postprocessors[0]["Path"]["Output"])
         else:
             output_file_path = input_file_path / "postprocessed"
 
