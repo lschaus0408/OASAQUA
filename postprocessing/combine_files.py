@@ -46,6 +46,7 @@ class CombineFiles(PostProcessor):
         output_directory: Path,
         output_filename_prefix: str = "OAS_Combined_Files",
         desired_file_size_gb: int = 1.5,
+        cycles: int = 2,
     ) -> None:
         super().__init__(
             directory_or_file_path=directory_or_file_path,
@@ -58,6 +59,7 @@ class CombineFiles(PostProcessor):
         self.split_data = []
         self.split_trigger = 0
         self._fileindex = 0
+        self.cycles = cycles
 
     def save_file(self, file_path: Path, data: pd.DataFrame):
         data.reset_index(drop=True, inplace=True)
@@ -77,25 +79,35 @@ class CombineFiles(PostProcessor):
         too small category. The one's in the too small category are combined up to the
         desired file size. The one's in the too large category are split into smaller files.
         """
-        # Grab all files inside directory
-        self.get_files_list(directory_or_file_path=self.directory_or_file_path)
+        for cycle in range(self.cycles):
+            tqdm.write(f"Starting cycle {cycle + 1} \n")
 
-        # Sort files
-        tqdm.write("Sorting Files...")
-        self.sort_files(list_of_files=self.all_files)
+            # Grab all files inside directory
+            self.get_files_list(directory_or_file_path=self.directory_or_file_path)
 
-        # Process big files
-        tqdm.write("Processing Large Files...")
-        self.process_big_files()
+            # Sort files
+            tqdm.write("Sorting Files...")
+            self.sort_files(list_of_files=self.all_files)
 
-        # Process small files
-        tqdm.write("Processing Small Files...")
-        self.process_small_files()
+            # Process big files
+            tqdm.write("Processing Large Files...")
+            self.process_big_files()
 
-        # Clean up
-        tqdm.write("Cleaning Up Old Files...")
-        for file in tqdm(self.all_files):
-            file.unlink()
+            # Process small files
+            tqdm.write("Processing Small Files...")
+            self.process_small_files()
+
+            if cycle < 1:
+                # Clean up
+                tqdm.write("Cleaning Up Old Files...")
+                for file in tqdm(self.all_files):
+                    file.unlink()
+
+            # Reset all_files for next cycle
+            self.all_files = []
+            self.too_big = {}
+            self.too_small = {}
+            self._fileindex = 0
 
     def process_big_files(self):
         """
