@@ -60,6 +60,7 @@ class CombineFiles(PostProcessor):
         self._fileindex = 0
 
     def save_file(self, file_path: Path, data: pd.DataFrame):
+        data.reset_index(drop=True, inplace=True)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(path_or_buf=file_path)
 
