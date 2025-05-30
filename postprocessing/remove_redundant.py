@@ -82,10 +82,10 @@ class RemoveRedundant(PostProcessor):
         # Load data, else statement allows for directory processing
         if filename is None:
             data = self.load_file(self.directory_or_file_path)
-            data.reset_index(inplace=True)
+            data.reset_index(inplace=True, drop=True)
         else:
             data = self.load_file(filename)
-            data.reset_index(inplace=True)
+            data.reset_index(inplace=True, drop=True)
 
         # Register indices that need to be dropped
         drop_indexes = []
@@ -97,6 +97,7 @@ class RemoveRedundant(PostProcessor):
                 self.hashes[hashed_sequence] = 1
 
         data = data.drop(drop_indexes)
+        data = data.reset_index(drop=True)
         if filename is None:
             self.save_file(data=data, file_path=self.directory_or_file_path)
         else:
