@@ -154,10 +154,11 @@ class Cluster(PostProcessor):
         for file_id, file in enumerate(self.all_files):
             data = pd.read_csv(
                 filepath_or_buffer=file,
-                index_col=0,
+                # index_col=0,
                 dtype=DTYPE_DICT,
-                usecols=["species"],
+                usecols=["Species"],
             )
+
             data["file_id"] = file_id
             sequence_ids: list[SequenceIdType] = list(zip(data.file_id, data.index))
             data["sequence_id"] = sequence_ids
@@ -166,10 +167,10 @@ class Cluster(PostProcessor):
             self.sequence_tracker.add_default_identities(sequence_ids, "keep")
 
             # Setup Species Category for Sequence Tracker
-            self.species_set.update(list(data["species"].unique()))
+            self.species_set.update(list(data["Species"].unique()))
 
             for species in self.species_set:
-                species_ids = data["sequence_id"][data["species"] == species].to_list()
+                species_ids = data["sequence_id"][data["Species"] == species].to_list()
                 if species_ids:
                     self.sequence_tracker.categories[species].extend(sequence_ids)
 
