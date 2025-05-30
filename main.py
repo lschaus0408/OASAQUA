@@ -18,7 +18,7 @@ import importlib.util
 
 from os.path import join
 from pathlib import Path
-from typing import Callable, Literal, Optional, TypeAlias
+from typing import Callable, Literal, Optional, TypeAlias, Union
 from argparse import ArgumentParser
 
 from tqdm import tqdm
@@ -317,14 +317,32 @@ class API:
         ## Method that calls DownloadOAS to download the files from the query.
         Check out oasdownload.py for more information on this method.
         """
+        # Create query bundle
+        query_bundle = self._flatten_queries(self.query)
+
         # Check if queries are correct
-        check_query(database=self.database, query=self.query)
+        check_query(database=self.database, query=query_bundle)
 
         # Provide the query to the downloader
-        self.downloader.set_search(self.query)
+        self.downloader.set_search(query_bundle)
 
         # Download files
         self.downloader()
+
+    def _flatten_queries(
+        self,
+        query: tuple[tuple[str, Union[str, list[str]]], ...],
+    ) -> tuple[tuple[str, str], ...]:
+        """
+        ## Bundles queries from aliases into multiple queries
+        """
+        result: list[tuple[str, str]] = []
+        for key, value in query:
+            if isinstance(value, list):
+                result.extend((key, subvalue) for subvalue in value)
+            else:
+                result.append((key, value))
+        return tuple(result)
 
     def set_database_path(self, custom_path: Optional[str] = None):
         """

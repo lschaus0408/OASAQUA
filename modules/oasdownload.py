@@ -150,7 +150,7 @@ class DownloadOAS:
             if not urls:
                 warnings.warn(
                     f"Query: {query} resulted in an empty request! \
-                    Please check if the query was valid.",
+                    \nPlease check if the query was valid.",
                     EmptyRequestWarning,
                 )
             combined_urls.update(urls)

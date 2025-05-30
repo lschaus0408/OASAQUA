@@ -22,56 +22,11 @@ import yaml
 
 FileFormatType: TypeAlias = Literal["json", "yaml", "yml"]
 
-QUERY_ALIASES = {
-    "Species": {"All": "*"},
-    "BSource": {"All": "*"},
-    "BType": {
-        "All": "*",
-        "CounterSelected": [
-            "Memory-B-Cells",
-            "Plasma-B-Cells",
-            "Naive-B-Cell/Plasmablast",
-            "Plasmablast/Plasma-B-Cells",
-            "Plasmablast",
-            "Germinal-Center-B-Cells",
-            "ASC",
-            "FO-Cells",
-        ],
-        "Immature": ["Pro-B-Cells", "Immature-B-Cells", "Pre-B-Cells", "Pro-B-Cells"],
-    },
-    "Disease": {
-        "All": "*",
-        "Amyloidosis": "Light-Chain-Amyloidosis",
-        "Rhinitis": ["Allergic-Rhinitis-Out-Of-Season", "Allergic-Rhinitis-In-Season"],
-        "Sleep-Apnea": [
-            "Tonsilitis/Obstructive-Sleep-Apnea",
-            "Obstructive-Sleep-Apnea",
-        ],
-        "Allergy": ["Allergy/NoSIT", "Allergy/SIT"],
-        "Autoimmune": [
-            "Allergy/NoSIT",
-            "Allergy/SIT",
-            "MS",
-            "SLE",
-            "MuSK-MG",
-            "AChR-MG",
-        ],
-        "Cancer": ["POEMS", "CLL"],
-        "Celiac-Disease": ["Healthy/Celiac-Disease"],
-        "Infectious-Disease": [
-            "SARS-COV-2",
-            "HIV",
-            "Ebola",
-            "CMV",
-            "HCV",
-            "EBV",
-            "CMV/EBV",
-            "Dengue",
-        ],
-    },
-    "Vaccine": {"All": "*"},
-    "Isotype": {"All": "*"},
-}
+current_file_path = Path(__file__).resolve()
+main_directory = current_file_path.parent
+query_file_path = main_directory / "files" / "super_queries.json"
+with open(query_file_path, "r", encoding="utf-8") as infile:
+    QUERY_ALIASES = json.load(infile)
 
 
 class ConfigValidationError(Exception):
@@ -285,8 +240,16 @@ def parse_config_file(
     for run in config["Runs"]:
         # Get basic config
         run_number = run["RunNumber"]
+
+        # Process query block
         if run.get("Query"):
             query_config = run["Query"]
+
+            # Adjust Output name
+            full_output_directory = Path(query_config["OutputDir"])
+            full_output_directory = full_output_directory / f"Run_{run_number}"
+            full_output_directory.mkdir()
+            query_config["OutputDir"] = full_output_directory
 
             if file_format == "yaml" or file_format == "yml":
                 # Get Attributes as flat dict
