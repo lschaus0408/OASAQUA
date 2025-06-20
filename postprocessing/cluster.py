@@ -18,7 +18,6 @@ import ast
 
 from pathlib import Path
 from typing import Optional, Literal
-from collections import defaultdict
 
 import pandas as pd
 
