@@ -18,6 +18,7 @@ import ast
 
 from pathlib import Path
 from typing import Optional, Literal
+from collections import defaultdict
 
 import pandas as pd
 
@@ -63,6 +64,7 @@ class Cluster(PostProcessor):
         consensus_threshold: float = 0.8,
         sample_per_cluster: int = 1,
         maximum_file_size_gb: Optional[float] = None,
+        scramble_data_before_cluster: bool = True,
     ):
         super().__init__(
             directory_or_file_path=directory_or_file_path,
@@ -90,6 +92,7 @@ class Cluster(PostProcessor):
         self.sequence_tracker: SequenceTracker = SequenceTracker()
         self.species_set: set = set()
         self.maximum_file_size = maximum_file_size_gb
+        self.scramble_data_before_cluster = scramble_data_before_cluster
 
     def load_file(self, file_path: Path, overwrite=False):
         """
@@ -142,10 +145,12 @@ class Cluster(PostProcessor):
                 # Sort identifiers by file
                 identifiers.sort(key=lambda item: item[0])
                 data = self.assemble_files(id_list=identifiers, species_id=species)
+                # Scamble data if desired
+                if self.scramble_data_before_cluster:
+                    data = data.sample(frac=1).reset_index(drop=True)
                 # Save file in folder for fastBCR
                 data_path = Path(fastbcr_dir) / f"fastbcr_{species}_temp.csv"
                 self.save_file(file_path=data_path, data=data)
-
             # Run fastBCR
             self.run_fastbcr(tempdir=fastbcr_dir)
 
