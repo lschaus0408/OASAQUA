@@ -55,6 +55,9 @@ class SequenceTracker:
     categories: Optional[dict[str, list[SequenceIdType]]] = field(
         default_factory=lambda: defaultdict(list)
     )
+    inverted_categories: Optional[dict[SequenceIdType, str]] = field(
+        default_factory=lambda: defaultdict(str)
+    )
     deleted: Optional[list[str]] = field(default_factory=list)
 
     def add_default_identities(
@@ -121,7 +124,6 @@ class SequenceTracker:
         The output datastructure is dict[file_id, dict[status, sequence_id]].
         """
         assembly_datastructure = defaultdict(lambda: defaultdict(list))
-
         # Iterate through the tracker
         for file_id, sequence_id in self.identities.keys():
             # Grab the sequence status
@@ -130,8 +132,22 @@ class SequenceTracker:
             if current_sequence_status == "keep" or current_sequence_status == "delete":
                 continue
             # Extend the dictionary
+            if not isinstance(sequence_id, list):
+                sequence_id = [sequence_id]
             assembly_datastructure[file_id][current_sequence_status].extend(sequence_id)
         return assembly_datastructure
+
+    def invert_categories(
+        self,
+    ) -> None:
+        """
+        ## Inverts self.categories to create self.invert_categories
+        """
+        inverted = {}
+        for key, identity_list in self.categories.items():
+            for identity in identity_list:
+                inverted[identity] = key
+        self.inverted_categories = inverted
 
 
 def ordered_sequence_ids(sequence_ids=list[SequenceIdType]) -> list[SequenceIdType]:

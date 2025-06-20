@@ -35,8 +35,14 @@ arguments <- parse_args(options)
 # Run FastBCR
 raw_sample_list <- data.load(folder_path = arguments$directory,
                              storage_format = "csv")
-paired_sample_list <- paired.preprocess(raw_sample_list)
-cluster_lists <- data.BCR.clusters(paired_sample_list,
+if (arguments$paired == TRUE) {
+  processed_sample_list <- paired.preprocess(raw_sample_list)
+} else {
+  processed_sample_list <- data.preprocess(raw_data_list = raw_sample_list,
+                                           productive_only = TRUE)
+}
+
+cluster_lists <- data.BCR.clusters(processed_sample_list,
                                    min_depth_thre = arguments$min_depth_thre,
                                    max_depth_thre = arguments$max_depth_thre,
                                    overlap_thre = arguments$overlap_thre,

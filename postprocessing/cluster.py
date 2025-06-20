@@ -14,10 +14,10 @@ be implemented upon demand.
 
 import tempfile
 import subprocess
+import ast
 
 from pathlib import Path
-from typing import Optional
-from collections import defaultdict
+from typing import Optional, Literal
 
 import pandas as pd
 
@@ -34,6 +34,7 @@ class Cluster(PostProcessor):
     """
 
     FBCR_COLUMNS = [
+        "Species",
         "cdr3",
         "cdr3_aa",
         "v_call",
@@ -47,12 +48,15 @@ class Cluster(PostProcessor):
 
     BASE_DIRECTORY = Path("./R_scripts")
 
+    RENAMING_EXCEPTIONS = ["Species"]
+
     def __init__(
         self,
         directory_or_file_path: Path,
         output_directory: Path,
         path_to_fastbcr: Optional[Path] = None,
         paired: bool = False,
+        chain_type: Optional[Literal["heavy", "light"]] = None,
         min_depth: int = 3,
         max_depth: int = 1000,
         overlap_threshold: float = 0.1,
@@ -68,6 +72,16 @@ class Cluster(PostProcessor):
         # Make sure fastBCR is installed
         self.path_to_fastbcr = path_to_fastbcr
         self.paired = paired
+        if not paired:
+            assert (
+                chain_type is not None
+            ), f"Chain type needs to be specified \
+            if paired is False. Current chain_type: {chain_type}"
+            assert chain_type in [
+                "heavy",
+                "light",
+            ], f"Chain type needs to be 'heavy' or 'light', not: {chain_type}"
+            self.chain_type = chain_type
         self.min_depth = min_depth
         self.max_depth = max_depth
         self.overlap_threshold = overlap_threshold
@@ -96,12 +110,12 @@ class Cluster(PostProcessor):
         ), f"Mandatory columns need to be present in the data for fastBCR to work: \
         {self.FBCR_MANDATORY}"
 
-        return pd.read_csv(
+        data = pd.read_csv(
             filepath_or_buffer=file_path,
-            index_col=0,
             dtype=DTYPE_DICT,
             usecols=load_columns,
         )
+        return data
 
     def save_file(self, file_path: Path, data: pd.DataFrame):
         """
@@ -127,7 +141,7 @@ class Cluster(PostProcessor):
             for species, identifiers in self.sequence_tracker.categories.items():
                 # Sort identifiers by file
                 identifiers.sort(key=lambda item: item[0])
-                data = self.assemble_files(id_list=identifiers)
+                data = self.assemble_files(id_list=identifiers, species_id=species)
                 # Save file in folder for fastBCR
                 data_path = Path(fastbcr_dir) / f"fastbcr_{species}_temp.csv"
                 self.save_file(file_path=data_path, data=data)
@@ -137,9 +151,8 @@ class Cluster(PostProcessor):
 
             # Load output
             temp_files = Path(fastbcr_dir).glob("**/*")
-            clonotype_files = [file for file in temp_files if "clonotype" in file]
+            clonotype_files = [file for file in temp_files if "clonotype" in file.name]
             sampled_ids = self.sample_clonotypes(files=clonotype_files)
-
             # Load originals
             self.sequence_tracker.update_status(new_status=sampled_ids)
             file_assembly_data = self.sequence_tracker.restructure_data()
@@ -174,22 +187,36 @@ class Cluster(PostProcessor):
                 if species_ids:
                     self.sequence_tracker.categories[species].extend(sequence_ids)
 
-    def assemble_files(self, id_list: list[SequenceIdType]) -> pd.DataFrame:
+    def assemble_files(
+        self, id_list: list[SequenceIdType], species_id: str
+    ) -> pd.DataFrame:
         """
         ## Creates one file for usage in fastBCR out of the id_list
         """
         filtered_data = None
+        seen_files = set()
 
-        for file_id, species_id in id_list:
+        for file_id, _ in id_list:
+            if file_id in seen_files:
+                continue
+            else:
+                seen_files.add(file_id)
             unfiltered_data = self.load_file(file_path=self.all_files[file_id])
+            current_id_set = [id_pair for id_pair in id_list if id_pair[0] == file_id]
+            unfiltered_data["sequence_id"] = current_id_set
             # Create dataframe if it doesn't exist
             if filtered_data is None:
-                filtered_data = unfiltered_data.loc[species_id]
+                filtered_data = unfiltered_data.loc[
+                    unfiltered_data["Species"] == species_id
+                ]
             else:
                 filtered_data = pd.concat(
-                    [unfiltered_data.loc[species_id], filtered_data], ignore_index=True
+                    [
+                        unfiltered_data.loc[unfiltered_data["Species"] == species_id],
+                        filtered_data,
+                    ],
+                    ignore_index=True,
                 )
-
         return filtered_data
 
     def run_fastbcr(self, tempdir: Path):
@@ -226,13 +253,24 @@ class Cluster(PostProcessor):
         """
         ## From fastBCR output files, samples IDs
         """
+        samples = []
         for file in files:
             data = pd.read_csv(
                 filepath_or_buffer=file,
                 usecols=["clonotype_index", "sequence_id", "raw_index", "raw_indices"],
             )
-            dataframe_sample = data.sample(n=self.sample_per_cluster)
-        return dict.fromkeys(dataframe_sample["sequence_id"].tolist(), "sampled")
+            try:
+                dataframe_sample = data.sample(n=self.sample_per_cluster)
+            except ValueError:
+                print(
+                    f"Couldn't sample {self.sample_per_cluster} for this clonotype, defaulting to 1"
+                )
+                dataframe_sample = data.sample(n=1)
+            samples.append(dataframe_sample)
+        all_samples = pd.concat(samples, ignore_index=True)
+        # Since read_csv messes up the dtypes, need to adjust the type here
+        all_samples["sequence_id"] = all_samples["sequence_id"].apply(ast.literal_eval)
+        return dict.fromkeys(all_samples["sequence_id"].tolist(), "sampled")
 
     def assemble_datasets_and_save(
         self,
@@ -245,14 +283,17 @@ class Cluster(PostProcessor):
         """
 
         def save_if_exceeds_size(
-            data: list[pd.DataFrame], name: SequenceIdType
+            data: list[pd.DataFrame], name: str = "fastBCR_Cluster"
         ) -> list[pd.DataFrame]:
             """
             ## Saves file if it exceeds the maximum file size
             """
             # Create dataframe
             current_dataframe = pd.concat(data, ignore_index=True)
-            current_dataframe = current_dataframe.astype(dtype=DTYPE_DICT)
+            pd_type_converter = {
+                key: DTYPE_DICT[key] for key in current_dataframe.columns
+            }
+            current_dataframe = current_dataframe.astype(dtype=pd_type_converter)
             # Get size in GB
             current_dataframe_size = current_dataframe.memory_usage(deep=True).sum() / (
                 1024**3
@@ -263,34 +304,33 @@ class Cluster(PostProcessor):
             ):
                 output_file_name = Path(
                     self.output_directory,
-                    f"{name}_chunk_{save_iteration_dict[name]}.csv",
+                    f"{name}_Chunk_{save_iteration}.csv",
                 )
                 self.save_file(file_path=output_file_name, data=current_dataframe)
                 return []
             # Return original if it doesnt exceed size
             return data
 
-        data_dict = defaultdict(list)
-        save_iteration_dict = defaultdict(int)
+        data_list = []
+        save_iteration = 0
 
         # Open each file in order
         for file_index, dataset in assembly_datastructure.items():
-            data = self.load_file(self.all_files[file_index])
+            data = pd.read_csv(
+                self.all_files[file_index], dtype=DTYPE_DICT, index_col=0
+            )
             # Add rows from the dataset to the dict according to the key
-            for dataset_key, dataset_value in dataset.items():
-                data_dict[dataset_key].append(data.iloc[dataset_value])
+            for _, dataset_value in dataset.items():
+                data_list.append(data.iloc[dataset_value])
 
-                data_dict[dataset_key] = save_if_exceeds_size(
-                    data=data_dict[dataset_key], name=dataset_key
-                )
-                if not data_dict[dataset_key]:
-                    save_iteration_dict[dataset_key] += 1
+                data_list = save_if_exceeds_size(data=data_list)
+                if not data_list:
+                    save_iteration += 1
 
         # Finally create remaining dataframes and save
-        for key, value in data_dict.items():
-            if value:
-                last_dataframe = pd.concat(value, ignore_index=True)
-                output_file_name = Path(
-                    self.output_directory, f"{key}_chunk_{save_iteration_dict[key]}.csv"
-                )
-                self.save_file(file_path=output_file_name, data=last_dataframe)
+        if data_list:
+            last_dataframe = pd.concat(data_list, ignore_index=True)
+            output_file_name = Path(
+                self.output_directory, f"fastBCR_Cluster_chunk_{save_iteration}.csv"
+            )
+            self.save_file(file_path=output_file_name, data=last_dataframe)
