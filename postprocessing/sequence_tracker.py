@@ -65,6 +65,7 @@ class SequenceTracker:
         ids: Iterable[SequenceIdType],
         default_status: StatusType,
         overwrite: bool = False,
+        sequences: Optional[Iterable[str]] = None,
     ) -> None:
         """
         ## From sequence ids, creates the identities dict
@@ -73,8 +74,10 @@ class SequenceTracker:
         if overwrite:
             self.identities = {}
 
-        for identifier in ids:
+        for i, identifier in enumerate(ids):
             self.identities[identifier].status = default_status
+            if sequences is not None:
+                self.identities[identifier].sequence = sequences[i]
 
     def update_status(self, new_status: dict[SequenceIdType, StatusType]) -> None:
         """

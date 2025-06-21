@@ -11,59 +11,19 @@ doi: https://doi.org/10.4049%2Fjimmunol.1800669
 import math
 
 from pathlib import Path
-from dataclasses import dataclass
 from typing import Union, Optional, Literal
 from collections import defaultdict, Counter
 from itertools import chain as iter_chain
 from functools import partial
-from multiprocessing import Pool
 
 from anarci import anarci
 from tqdm import tqdm
+from pathos.multiprocessing import ProcessingPool as Pool
 
 import pandas as pd
-import numpy as np
 
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
-
-
-@dataclass
-class SequenceTracker:
-    """
-    ## Dataclass for processing sequences
-    """
-
-    sequences: list[tuple[str, str]]
-    status: Optional[dict[str, bool]] = None
-
-    def __post_init__(self):
-        # Make sure data is in correct format
-        assert isinstance(self.sequences, list) and isinstance(
-            self.sequences[0], tuple
-        ), "Sequences attribute provided needs to be of type list[tuple[str, str]]"
-        # Make more memory efficient, the length of the sequences attribute is now immutable
-        self.sequences = np.array(self.sequences)
-        if self.status is None:
-            self.status = {}
-            for identity, _ in self.sequences:
-                self.status[identity] = True
-
-        self.deleted = []
-
-    def update_status(self, new_status: dict):
-        """
-        ## Updates status attribute
-        """
-        for key in new_status.keys():
-            self.status[key] = new_status[key][0]
-
-    def update_deleted_sequences(self):
-        """
-        ## Stores sequences if their status is false
-        """
-        for identity, sequence in self.sequences:
-            if not self.status[identity]:
-                self.deleted.append(sequence)
+from postprocessing.sequence_tracker import SequenceTracker
 
 
 class AntibodyViability(PostProcessor):
@@ -94,7 +54,7 @@ class AntibodyViability(PostProcessor):
             ), "Data needs to be a pandas DataFrame."
         self.data = data
         self.path: Optional[Path] = None
-        self.tracker: Optional[SequenceTracker] = None
+        self.sequence_tracker: SequenceTracker = SequenceTracker()
         self.filter_strictness = filter_strictness
         self.batch_size = batch_size
         self.ncpus = ncpus
@@ -121,7 +81,10 @@ class AntibodyViability(PostProcessor):
             )
         else:
             self.data = pd.read_csv(
-                file_path, index_col=0, dtype=DTYPE_DICT, usecols=["Sequence_aa"]
+                file_path,
+                index_col=0,
+                dtype=DTYPE_DICT,
+                usecols=["Chain", "Sequence_aa"],
             )
 
         self.path = file_path
@@ -140,7 +103,10 @@ class AntibodyViability(PostProcessor):
         tqdm.write("Removing Sequences from Dataset...")
         # We only load "Sequence_aa before to save memory"
         self.data = pd.read_csv(self.path, index_col=0, dtype=DTYPE_DICT)
-        self.data = self.data[~self.data["Sequence_aa"].isin(self.tracker.deleted)]
+        save_data = self.data[
+            ~self.data["Sequence_aa"].isin(self.sequence_tracker.deleted)
+        ].reset_index(drop=True)
+        self.save_file(file_path=self.path, data=save_data)
         tqdm.write("Finished removing sequences!")
 
     # PROCESS SHOULDN'T HAVE ANY ARGUMENTS
@@ -171,14 +137,19 @@ class AntibodyViability(PostProcessor):
         if self.directory_or_file_path:
             self.get_files_list(directory_or_file_path=self.directory_or_file_path)
 
-        for file in self.all_files:
-            self.load_file(file_path=file)
+        for file_number, file in enumerate(self.all_files):
+            self.load_file(file_path=file, overwrite=True)
+            tqdm.write(
+                f"Starting antibody viability filtering for file {file_number}..."
+            )
             self.filter_sequences(
                 filter_strictness=self.filter_strictness,
                 batch_size=self.batch_size,
                 ncpus=self.ncpus,
                 max_batch_size=self.max_batch_size,
             )
+            # Reset Sequence Tracker
+            self.sequence_tracker = SequenceTracker()
 
     def filter_sequences(
         self,
@@ -190,7 +161,6 @@ class AntibodyViability(PostProcessor):
         """
         ## Performs filtering of sequences
         """
-        tqdm.write("Starting antibody viability filtering...")
         # Set batch size, dynamic is especially useful for files with few sequences
         if batch_size == "dynamic":
             batch_size = int(math.ceil(len(self.data) / ncpus))
@@ -204,12 +174,13 @@ class AntibodyViability(PostProcessor):
         partial_process_batch = partial(
             self.process_batch, filter_strictness=filter_strictness
         )
+
         all_results = []
         # Multiprocessing of sequence batches
         with Pool(processes=ncpus) as pool:
             results = list(
                 tqdm(
-                    pool.imap_unordered(partial_process_batch, data_chunks),
+                    pool.uimap(partial_process_batch, data_chunks),
                     total=len(data_chunks),
                 )
             )
@@ -218,15 +189,15 @@ class AntibodyViability(PostProcessor):
 
         # Remove sequences from Sequence Tracker that show up in all_results
         merged_results = self._combine_dictionaries(all_results)
-        self.tracker.update_status(merged_results)
-        self.tracker.update_deleted_sequences()
+        self.sequence_tracker.update_status(merged_results)
+        self.sequence_tracker.update_deleted_sequences()
         self.update_data()
 
     def process_batch(
         self,
         batch: tuple[tuple[str, str]],
         filter_strictness: Literal["loose", "strict"],
-    ):
+    ) -> dict[str, bool]:
         """
         ## Processes one batch of data
         First runs anarci, then checks if sequences could not be parsed by anarci.
@@ -248,7 +219,7 @@ class AntibodyViability(PostProcessor):
 
         numbered_batch = self.get_anarci_numbering(sequences=batch)
         for index, numbered_sequence in enumerate(numbered_batch[0]):
-            # From simplest to calculate to hardest we filter out sequences
+            # From simplest to hardest to calculate we filter out sequences
 
             # If anarci couldn't align the sequence, set status to false
             if numbered_sequence is None:
@@ -319,7 +290,7 @@ class AntibodyViability(PostProcessor):
         numbered_sequence: list[tuple],
         filter_strictness: Literal["loose", "strict"],
         probability_threshold: float,
-        residue_probabilities: dict[dict[float]],
+        residue_probabilities: dict[str, dict[str, float]],
     ) -> bool:
         """
         ## Filters residues based on their per-residue probabilities
@@ -350,15 +321,21 @@ class AntibodyViability(PostProcessor):
                 return True
         return False
 
-    def get_residue_probabilities(self, residue_list: list) -> dict:
+    def get_residue_probabilities(
+        self, residue_list: list
+    ) -> dict[str, dict[str, float]]:
         """
         # Returns the probabilities of each residue at each position
         """
         # Merge all dictionaries
-        merged_residue_dictionary = self._combine_dictionaries(residue_list)
+        merged_residue_dictionary = defaultdict(list)
+        for sequence_position_data in residue_list:
+            for key, value in sequence_position_data.items():
+                merged_residue_dictionary[key].append(value)
 
+        output_dict = {}
         # Iterate through all numbered positions
-        for _, value in merged_residue_dictionary.items():
+        for position, value in merged_residue_dictionary.items():
             # Get position counts
             position_counter = Counter(value)
             total_counts = position_counter.total()
@@ -367,8 +344,9 @@ class AntibodyViability(PostProcessor):
             for item, _ in position_counter.items():
                 position_counter[item] /= total_counts
             # Update dictionary
-            value = position_counter
-        return merged_residue_dictionary
+            output_dict[position] = position_counter
+
+        return output_dict
 
     @staticmethod
     def _flagged_by_position(
@@ -507,7 +485,11 @@ class AntibodyViability(PostProcessor):
                 package.append((f"Seq_{iterator}", sequence))
         if package:
             # Keep track of sequence status using sequence tracker
-            self.tracker = SequenceTracker(sequences=package)
+            self.sequence_tracker.add_default_identities(
+                [(0, i) for i in range(len(package))],
+                default_status="keep",
+                sequences=[seq[1] for seq in package],
+            )
             # Free up memory (Important if files are big)
             self.data = pd.DataFrame()
             # Package in chunks of batch_size
@@ -550,15 +532,18 @@ class AntibodyViability(PostProcessor):
         return set(sequence) <= allowed
 
     @staticmethod
-    def _combine_dictionaries(list_of_dictionaries: list[dict]) -> dict:
+    def _combine_dictionaries(list_of_dictionaries: list[dict[str, bool]]) -> dict:
         """
-        ## Combines dictionaries and places values in a list
+        ## Combines dictionaries and converts the values
+        Convert from {"Seq_id": bool} to {(0,id): "delete"} to make
+        it compatible with SequenceTracker
         """
         # Setup defaultdict
-        output_dictionary = defaultdict(list)
+        output_dictionary = {}
         for data in list_of_dictionaries:
-            for key, value in data.items():
-                output_dictionary[key].append(value)
+            for key, _ in data.items():
+                index = int(key.split("_")[1])
+                output_dictionary[(0, index)] = "delete"
         return output_dictionary
 
     def get_anarci_numbering(self, sequences: tuple[tuple[str, str]]) -> tuple:
@@ -571,33 +556,3 @@ class AntibodyViability(PostProcessor):
 
 if __name__ == "__main__":
     print("This is the antibody viability file")
-    # oas_files_path = Path("/central/groups/smayo/lschaus/OAS_Files").glob("**/*")
-    # list_of_files = [file for file in oas_files_path if file.is_file()]
-
-    # for file in list_of_files:
-    #     file_size = file.stat().st_size / 1024
-    #     if file_size < 1000:
-    #         NCPUS_TEST = 2
-    #         MAX_BATCH_SIZE_TEST = 1000
-    #     elif file_size < 300_000:
-    #         NCPUS_TEST = 32
-    #         MAX_BATCH_SIZE_TEST = 1000
-    #     else:
-    #         NCPUS_TEST = 10
-    #         MAX_BATCH_SIZE_TEST = 500
-    #     A = AntibodyViability(directory_or_file_path="", output_directory="")
-    #     A.load_file(file)
-    #     A.process(
-    #         batch_size="dynamic", ncpus=NCPUS_TEST, max_batch_size=MAX_BATCH_SIZE_TEST
-    #     )
-    #     save_path = Path("/central/groups/smayo/lschaus/OAS_Processed")
-    #     save_path = save_path / file.name
-    #     A.save_file(save_path, A.data)
-
-    # # First batch
-    # A = AntibodyViability()
-    # A.load_file(Path(path))
-    # A.process(batch_size="dynamic", ncpus=1, max_batch_size=1000)
-    # A.save_file(
-    #     Path("/central/groups/smayo/lschaus/OAS_Processed/OAS_Human_IGHG_ASC_00001.csv")
-    # )
