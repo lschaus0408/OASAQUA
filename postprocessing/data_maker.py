@@ -11,7 +11,7 @@ import warnings
 import random
 
 from pathlib import Path
-from typing import Union, Literal, Optional, Any
+from typing import Union, Literal, Optional, Any, TypeAlias
 from math import isclose
 from collections import defaultdict
 from functools import partial
@@ -28,8 +28,8 @@ from postprocessing.sequence_tracker import (
     SequenceIdType,
 )
 
-DatasetDefinitionType = Literal["train", "test", "validation"]
-PriorityType = tuple[DatasetDefinitionType, ...]
+DatasetDefinitionType: TypeAlias = Literal["train", "test", "validation"]
+PriorityType: TypeAlias = tuple[DatasetDefinitionType, ...]
 
 
 class DataMaker(PostProcessor):
@@ -151,12 +151,15 @@ class DataMaker(PostProcessor):
 
         for dataset_name in self.change_dataset_priority:
             if (
-                dataset_name in self.dataset_numbers.keys()
-                or dataset_name in self.dataset_ratios.keys()
+                isinstance(self.dataset_ratios, dict)
+                and dataset_name in self.dataset_ratios.keys()
+            ) or (
+                isinstance(self.dataset_numbers, dict)
+                and dataset_name in self.dataset_numbers.keys()
             ):
                 if self.verbose:
                     tqdm.write(f"Sampling {dataset_name} data...")
-                self.sample_data(data_type={dataset_name})
+                self.sample_data(data_type=dataset_name)
 
         assembly_datastructure = self.sequence_tracker.restructure_data()
         self.assemble_datasets_and_save(assembly_datastructure=assembly_datastructure)
@@ -183,7 +186,10 @@ class DataMaker(PostProcessor):
             """
             # Create dataframe
             current_dataframe = pd.concat(data, ignore_index=True)
-            current_dataframe = current_dataframe.astype(dtype=DTYPE_DICT)
+            pd_type_converter = {
+                key: DTYPE_DICT[key] for key in current_dataframe.columns
+            }
+            current_dataframe = current_dataframe.astype(dtype=pd_type_converter)
             # Get size in GB
             current_dataframe_size = current_dataframe.memory_usage(deep=True).sum() / (
                 1024**3
@@ -230,8 +236,8 @@ class DataMaker(PostProcessor):
         """
         ## Prints information about the dataset
         """
-        tqdm.write("Categories: ", self.category_set)
-        tqdm.write("Total number of sequences: ", self.total_sampleable_sequences)
+        tqdm.write(f"Categories: {self.category_set}")
+        tqdm.write(f"Total number of sequences: {self.total_sampleable_sequences}")
 
     def create_sequence_tracker(
         self,
@@ -270,11 +276,10 @@ class DataMaker(PostProcessor):
         # Keep track of all possible sampleable sequences in the tracker
         self.total_sampleable_sequences = len(self.sequence_tracker.categories["NA"])
 
-    def sample_data(self, data_type: StatusType) -> pd.DataFrame:
+    def sample_data(self, data_type: DatasetDefinitionType) -> pd.DataFrame:
         """
         ## Samples data from sequence tracker and packages into dataframes
         """
-
         # Sampling by numbers
         if self.dataset_numbers is not None:
             sample_number = round(
