@@ -166,6 +166,7 @@ class DataMaker(PostProcessor):
 
         # Save data as csv
         for key, value in self._output_file_paths:
+            print(self._output_file_paths)
             self.save_file(value, self._processed_datasets[key])
 
     def assemble_datasets_and_save(
