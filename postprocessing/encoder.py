@@ -9,6 +9,7 @@ encoding, the rest of the class is contained in here.
 """
 
 import io
+import warnings
 
 from pathlib import Path
 from typing import Literal, Optional, Callable, TypeAlias
@@ -245,6 +246,15 @@ class Encoder(PostProcessor):
             print(f"Encoding {self.output_file_prefix} via single process...")
             return self._encode_single_process
         else:
+            # In 3.11 pickling the torch model gets mp stuck in wait()
+            if hasattr(self, "model"):
+                warnings.warn(
+                    "In python 3.11, pickling a torch model gets multiprocessing \
+                              stuck in waiter.acquire(). Defaulting to 1 process!",
+                    RuntimeWarning,
+                )
+                self.n_jobs = 1
+                return self.encoding_factory()
             print(f"Encoding {self.output_file_prefix} via multiprocess...")
             return self._encode_multi_process
 
