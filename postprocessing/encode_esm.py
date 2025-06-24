@@ -19,6 +19,8 @@ import torch
 import numpy as np
 import numpy.typing as npt
 
+from tqdm import tqdm
+
 from postprocessing.encoder import Encoder
 from postprocessing.sequence_tracker import SequenceIdType, sequence_id_to_str
 
@@ -79,15 +81,23 @@ class EncodeESM(Encoder):
             environ["CUDA_VISIBLE_DEVICES"] = ""
 
     def _encode_single_process(
-        self, sequences: dict[SequenceIdType, npt.NDArray[np.str_]]
+        self,
+        sequences: dict[SequenceIdType, npt.NDArray[np.str_]],
+        show_progress: bool = True,
     ) -> dict[SequenceIdType, npt.NDArray[np.uint8]]:
         """
         ## Encodes via ESM encoder
         """
         encoded_sequences: dict[SequenceIdType, npt.NDArray[np.float32]] = {}
         data_batch = []
+
+        # Setting up tqdm to work with multiprocessing as well
+        sequence_iterator = sequences.items()
+        if show_progress:
+            sequence_iterator = tqdm(sequence_iterator, total=len(sequences))
+
         # Generate data batch
-        for sequence_id, sequence in sequences.items():
+        for sequence_id, sequence in sequence_iterator:
             # Convert sequence ID to a string
             index = sequence_id_to_str(sequence_id=sequence_id)
             data_batch.append((f"Protein_{index}", sequence))
