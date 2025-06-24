@@ -17,6 +17,8 @@ from typing import Literal, Optional
 import numpy as np
 import numpy.typing as npt
 
+from tqdm import tqdm
+
 from postprocessing.encoder import Encoder
 from postprocessing.sequence_tracker import SequenceIdType
 
@@ -56,28 +58,34 @@ class EncodeOneHot(Encoder):
         )
 
     def _encode_single_process(
-        self, sequences: dict[SequenceIdType, npt.NDArray[np.str_]]
+        self,
+        sequences: dict[SequenceIdType, npt.NDArray[np.str_]],
+        show_progress: bool = True,
     ) -> dict[SequenceIdType, npt.NDArray[np.uint8]]:
         """
         ## One-Hot Encodes sequences using a single process
         """
         encoded_sequences: dict[SequenceIdType, npt.NDArray[np.uint8]] = {}
-        for sequence_id, sequence in sequences.items():
+
+        # Setting up tqdm to work with multiprocessing as well
+        sequence_iterator = sequences.items()
+        if show_progress:
+            sequence_iterator = tqdm(sequence_iterator, total=len(sequences))
+
+        for sequence_id, sequence in sequence_iterator:
             # Setup empty array
             encoded = np.zeros(
                 shape=(self.pad_size, len(self.ALL_AMINO_ACIDS)), dtype=np.uint8
             )
-            sequence_lenght = len(sequence)
+            sequence_length = len(sequence)
             # Pad with the pad token
-            if sequence_lenght < self.pad_size:
-                difference = self.pad_size - sequence_lenght
+            if sequence_length < self.pad_size:
+                difference = self.pad_size - sequence_length
                 sequence = sequence + "X" * difference
 
             # Get two position lists
-            residue_positions = range(sequence_lenght)
-            residue_id_numbers = list(
-                map(lambda residue: self.ALL_AMINO_ACIDS[residue], sequence)
-            )
+            residue_positions = np.arange(len(sequence))
+            residue_id_numbers = [self.ALL_AMINO_ACIDS[residue] for residue in sequence]
             # Advanced indexing to populate array
             encoded[residue_positions, residue_id_numbers] = 1
 

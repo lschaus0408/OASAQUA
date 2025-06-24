@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import Literal, Optional, Callable
 from itertools import cycle
-from multiprocessing import Pool
+from functools import partial
 from sys import getsizeof
 from abc import abstractmethod
 
@@ -22,6 +22,7 @@ import numpy as np
 import numpy.typing as npt
 
 from tqdm import tqdm
+from pathos.multiprocessing import ProcessingPool as Pool
 
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
 from postprocessing.sequence_tracker import SequenceIdType, ordered_sequence_ids
@@ -95,7 +96,6 @@ class Encoder(PostProcessor):
         return pd.read_csv(
             filepath_or_buffer=file_path,
             usecols=columns_to_use,
-            index_col=0,
             dtype=DTYPE_DICT,
         )
 
@@ -114,7 +114,7 @@ class Encoder(PostProcessor):
         ## Saves the file as json
         """
         json_string = json.dumps(data)
-        file_path = Path(file_path, ".json")
+        file_path = file_path.with_suffix(".json")
         with open(file_path, "w", encoding="utf-8") as file:
             file.write(json_string)
 
@@ -130,7 +130,7 @@ class Encoder(PostProcessor):
         data_values = [data[key] for key in ordered_data_keys]
 
         # Save the array
-        file_path = Path(file_path, ".npy")
+        file_path = file_path.with_suffix(".npy")
         np.save(file=file_path, arr=data_values)
 
     def process(self):
@@ -148,12 +148,12 @@ class Encoder(PostProcessor):
             data = self.load_file(file_path=file)
             # Remove indices where the sequence is greater than the pad_size
             data["sequence_lenght"] = data["Sequence_aa"].str.len()
-            filtered_data = data[data["sequence_lenght"] > self.pad_size]
+            filtered_data = data[data["sequence_lenght"] <= self.pad_size]
 
             # Create SequenceIDType column
             filtered_data.reset_index(drop=True, inplace=True)
             filtered_data["file_id"] = index
-            sequence_ids = list[SequenceIdType] = list(
+            sequence_ids: list[SequenceIdType] = list(
                 zip(filtered_data.file_id, filtered_data.index)
             )
             filtered_data["Tuple"] = sequence_ids
@@ -170,7 +170,11 @@ class Encoder(PostProcessor):
 
             processing_function = self.encoding_factory()
             encoded_sequence_dict.update(processing_function(sequence_dict))
-
+            # Convert dict to be compatible with json (tuple -> str)
+            encoded_sequence_dict = {
+                f"({','.join(map(str, key))})": np.asarray(value).tolist()
+                for key, value in encoded_sequence_dict.items()
+            }
             # Determine the size of the dict and save
             json_string = json.dumps(encoded_sequence_dict)
             if (
@@ -212,6 +216,10 @@ class Encoder(PostProcessor):
             )
             self.save_file(file_path=category_output_file_path, data=category_dict)
 
+        # Clear data
+        encoded_sequence_dict = {}
+        category_dict = {}
+
     def encoding_factory(
         self,
     ) -> Callable[
@@ -224,13 +232,17 @@ class Encoder(PostProcessor):
         or use multi-processing to encode sequences.
         """
         if self.n_jobs == 1:
+            print(f"Encoding {self.output_file_prefix} via single process...")
             return self._encode_single_process
         else:
+            print(f"Encoding {self.output_file_prefix} via multiprocess...")
             return self._encode_multi_process
 
     @abstractmethod
     def _encode_single_process(
-        self, sequences: dict[SequenceIdType, npt.NDArray[np.str_]]
+        self,
+        sequences: dict[SequenceIdType, npt.NDArray[np.str_]],
+        show_progress: bool = True,
     ) -> dict[SequenceIdType, npt.NDArray[np.uint8]]:
         """
         ## Encodes sequences using a single process
@@ -244,22 +256,21 @@ class Encoder(PostProcessor):
         """
         # Split the data into chunks
         split_data = self._split_dict(dictionary=sequences, chunks=self.n_jobs * 20)
-        len_split_data = [len(item) for item in split_data]
+
+        # Progress bar (inner is in single_process)
+        outer_progress_bar = tqdm(total=len(split_data))
 
         all_results: dict[SequenceIdType, npt.NDArray] = {}
 
         with Pool(processes=self.n_jobs) as pool:
-            # Multiprocess
-            results = list(
-                tqdm(
-                    pool.imap(self._encode_single_process, split_data),
-                    total=len_split_data,
-                )
+            # Workers do not open their own bars
+            processing_function_without_bar = partial(
+                self._encode_single_process, show_progress=False
             )
-
-            # Reassemble results
-            for encoded_sequences in results:
-                all_results.update(encoded_sequences)
+            # Multiprocess
+            for chunk_result in pool.imap(processing_function_without_bar, split_data):
+                all_results.update(chunk_result)
+                outer_progress_bar.update()
 
         if self.flatten:
             all_results = self._flatten_arrays(data=all_results)
