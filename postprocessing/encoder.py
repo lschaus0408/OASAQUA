@@ -8,14 +8,15 @@ Parent class for encoding post processors. Encoders only differ in their impleme
 encoding, the rest of the class is contained in here.
 """
 
-import json
+import io
 
 from pathlib import Path
-from typing import Literal, Optional, Callable
+from typing import Literal, Optional, Callable, TypeAlias
 from itertools import cycle
 from functools import partial
-from sys import getsizeof
 from abc import abstractmethod
+
+import orjson
 
 import pandas as pd
 import numpy as np
@@ -26,6 +27,9 @@ from pathos.multiprocessing import ProcessingPool as Pool
 
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
 from postprocessing.sequence_tracker import SequenceIdType, ordered_sequence_ids
+
+ArrayDict: TypeAlias = dict[str, npt.NDArray]
+SaveFormat: TypeAlias = Literal["json", "numpy", "npy", "npz"]
 
 
 class Encoder(PostProcessor):
@@ -63,7 +67,7 @@ class Encoder(PostProcessor):
         directory_or_file_path: Path,
         output_directory: Path,
         pad_size: int,
-        save_format: Literal["json", "numpy"],
+        save_format: SaveFormat,
         category_column: Optional[str] = None,
         n_jobs: int = 1,
         maximum_file_size_gb: Optional[int] = None,
@@ -105,7 +109,12 @@ class Encoder(PostProcessor):
         Saves file in the format provided by the save_format attribute.
         """
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        saving_factory = {"json": self._save_as_json, "numpy": self._save_as_numpy}
+        saving_factory = {
+            "json": self._save_as_json,
+            "numpy": self._save_as_numpy,
+            "npy": self._save_as_numpy,
+            "npz": self._save_as_numpy,
+        }
         saving_factory[self.save_format](file_path=file_path, data=data)
 
     @staticmethod
@@ -113,13 +122,12 @@ class Encoder(PostProcessor):
         """
         ## Saves the file as json
         """
-        json_string = json.dumps(data)
+        json_string = orjson.dumps(data)  # pylint: disable=maybe-no-member
         file_path = file_path.with_suffix(".json")
         with open(file_path, "w", encoding="utf-8") as file:
             file.write(json_string)
 
-    @staticmethod
-    def _save_as_numpy(file_path: Path, data: dict):
+    def _save_as_numpy(self, file_path: Path, data: dict):
         """
         ## Saves the file as npz
         """
@@ -130,8 +138,12 @@ class Encoder(PostProcessor):
         data_values = [data[key] for key in ordered_data_keys]
 
         # Save the array
-        file_path = file_path.with_suffix(".npy")
-        np.save(file=file_path, arr=data_values)
+        if self.save_format == "npz":
+            file_path = file_path.with_suffix(".npz")
+            np.savez(file=file_path, arr=data_values)
+        else:
+            file_path = file_path.with_suffix(".npy")
+            np.save(file=file_path, arr=data_values)
 
     def process(self):
         """
@@ -170,16 +182,14 @@ class Encoder(PostProcessor):
 
             processing_function = self.encoding_factory()
             encoded_sequence_dict.update(processing_function(sequence_dict))
-            # Convert dict to be compatible with json (tuple -> str)
-            encoded_sequence_dict = {
-                f"({','.join(map(str, key))})": np.asarray(value).tolist()
-                for key, value in encoded_sequence_dict.items()
-            }
-            # Determine the size of the dict and save
-            json_string = json.dumps(encoded_sequence_dict)
+            print("Data size estimation...")
+            data_size = estimate_data_size(
+                encoded_sequence_dict, data_format=self.save_format
+            )
+            print("Saving files...")
             if (
                 self.maximum_file_size is not None
-                and getsizeof(json_string) > self.maximum_file_size
+                and data_size > self.maximum_file_size * 1024**3
             ):
                 # Save data file
                 output_file_path = Path(
@@ -298,3 +308,46 @@ class Encoder(PostProcessor):
         for key, value in dictionary.items():
             split_dict[next(iterator)][key] = value
         return split_dict
+
+
+def estimate_data_size(
+    data: ArrayDict, *, data_format: SaveFormat, json_options: Optional[int] = None
+) -> int:
+    """
+    ## Estimates the size of encoded data
+    Can distinguish between json and numpy formats. Json options allowed.
+    ### Args:
+        \t-data {ArrayDict} -- Mapping from keys to numpy array \n
+        \t-format {SaveFormat} -- Format in which the data is saved \n
+            -Options: json, numpy, npy, npz \n
+        \t-json_options {int} -- Passed to orjson.dumps
+    """
+    if data_format == "json":
+
+        if json_options is None:
+            json_options = (
+                orjson.OPT_SERIALIZE_NUMPY  # pylint: disable=maybe-no-member
+                | orjson.OPT_NON_STR_KEYS  # pylint: disable=maybe-no-member
+            )
+
+        return len(
+            orjson.dumps(data, option=json_options)  # pylint: disable=maybe-no-member
+        )
+
+    elif data_format in {"numpy", "npy", "npz"}:
+
+        # Convert keys from tuple to str
+        data = {f"({','.join(map(str, key))})": value for key, value in data.items()}
+
+        buffer: io.BytesIO = io.BytesIO()
+
+        if data_format == "npz":
+            np.savez(buffer, **data)
+
+        else:
+            np.save(buffer, data)
+
+        return buffer.getbuffer().nbytes
+
+    else:
+        raise ValueError("Format must be 'json', 'numpy', 'npy' or 'npz'")
