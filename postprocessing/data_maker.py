@@ -164,11 +164,6 @@ class DataMaker(PostProcessor):
         assembly_datastructure = self.sequence_tracker.restructure_data()
         self.assemble_datasets_and_save(assembly_datastructure=assembly_datastructure)
 
-        # Save data as csv
-        for key, value in self._output_file_paths:
-            print(self._output_file_paths)
-            self.save_file(value, self._processed_datasets[key])
-
     def assemble_datasets_and_save(
         self,
         assembly_datastructure: dict[str, dict[str, list]],
@@ -201,6 +196,7 @@ class DataMaker(PostProcessor):
             ):
                 output_file_name = Path(
                     self.output_directory,
+                    name,
                     f"{name}_chunk_{save_iteration_dict[name]}.csv",
                 )
                 self.save_file(file_path=output_file_name, data=current_dataframe)
@@ -229,7 +225,9 @@ class DataMaker(PostProcessor):
             if value:
                 last_dataframe = pd.concat(value, ignore_index=True)
                 output_file_name = Path(
-                    self.output_directory, f"{key}_chunk_{save_iteration_dict[key]}.csv"
+                    self.output_directory,
+                    key,
+                    f"{key}_chunk_{save_iteration_dict[key]}.csv",
                 )
                 self.save_file(file_path=output_file_name, data=last_dataframe)
 
