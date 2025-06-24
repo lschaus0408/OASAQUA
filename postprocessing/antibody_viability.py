@@ -41,7 +41,7 @@ class AntibodyViability(PostProcessor):
         data: Optional[pd.DataFrame] = None,
         filter_strictness: Literal["loose", "strict"] = "loose",
         batch_size: Union[int, Literal["dynamic"]] = "dynamic",
-        ncpus: int = 1,
+        n_jobs: int = 1,
         max_batch_size: int = 10000,
     ) -> None:
         super().__init__(
@@ -57,7 +57,7 @@ class AntibodyViability(PostProcessor):
         self.sequence_tracker: SequenceTracker = SequenceTracker()
         self.filter_strictness = filter_strictness
         self.batch_size = batch_size
-        self.ncpus = ncpus
+        self.n_jobs = n_jobs
         self.max_batch_size = max_batch_size
 
     def load_file(self, file_path: Path, overwrite: bool = False):
@@ -145,7 +145,7 @@ class AntibodyViability(PostProcessor):
             self.filter_sequences(
                 filter_strictness=self.filter_strictness,
                 batch_size=self.batch_size,
-                ncpus=self.ncpus,
+                ncpus=self.n_jobs,
                 max_batch_size=self.max_batch_size,
             )
             # Reset Sequence Tracker
