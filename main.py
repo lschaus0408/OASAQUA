@@ -13,6 +13,7 @@ communicating with the post-processing tools.
 ### TO DO!!! Make sure to always include 'Chain' CATEGORY for postprocessors to work
 
 import os
+import re
 import warnings
 import importlib.util
 
@@ -677,17 +678,43 @@ def run_postprocessing(oasrun: OASRun, api: Optional[API] = None):
 
     # Go through postprocessors
     for postprocessor in oasrun.postprocessors:
+
+        # Remove class suffix when multiple calls of the same class
+        old_key, value = next(iter(postprocessor.items()))
+        new_key = re.sub(r"_\d+$", "", old_key)
+        if new_key != old_key:
+            postprocessor[new_key] = value
+            del postprocessor[old_key]
+
         # Path is independent of other postprocessors
         if "Path" in postprocessor:
             continue
         # Go through PostProcessors in Config and run them with args provided
         for class_name, class_path in ALL_POSTPROCESSORS.items():
+
             if class_name in postprocessor:
                 cls = import_class_from_file(class_name, Path(class_path))
+                postprocessor_args = next(iter(postprocessor.values()))
+
+                # Override paths if they exist in the config
+                input_file_path = Path(
+                    postprocessor_args.get("directory_or_file_path", input_file_path)
+                )
+                output_file_path = Path(
+                    postprocessor_args.get("output_directory", output_file_path)
+                )
+
+                # Remove overriden keys
+                kwargs = {
+                    key: value
+                    for key, value in postprocessor_args.items()
+                    if key not in {"directory_or_file_path", "output_directory"}
+                }
+
                 postprocessing_instance: PostProcessor = cls(
                     directory_or_file_path=input_file_path,
                     output_directory=output_file_path,
-                    **next(iter(postprocessor.values())),
+                    **kwargs,
                 )
                 postprocessing_instance.process()
         input_file_path = output_file_path
