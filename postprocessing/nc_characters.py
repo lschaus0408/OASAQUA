@@ -12,6 +12,8 @@ from typing import Optional
 
 import pandas as pd
 
+from tqdm import tqdm
+
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
 from postprocessing.encoder import Encoder
 
@@ -66,7 +68,8 @@ class NCCharacters(PostProcessor):
         # Loads all files
         self.get_files_list(directory_or_file_path=self.directory_or_file_path)
 
-        for file in self.all_files:
+        tqdm.write("Removing Non-Canonical Characters...")
+        for file in tqdm(self.all_files, total=len(self.all_files)):
             data = self.load_file(file_path=file)
             filtered_data = data[
                 data["Sequence_aa"].apply(self.contains_canonical_characters)

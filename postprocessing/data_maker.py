@@ -150,6 +150,7 @@ class DataMaker(PostProcessor):
             self.print_data_info()
 
         for dataset_name in self.change_dataset_priority:
+            tqdm.write(f"Sampling {dataset_name} sequences...")
             if (
                 isinstance(self.dataset_ratios, dict)
                 and dataset_name in self.dataset_ratios.keys()
@@ -246,7 +247,8 @@ class DataMaker(PostProcessor):
         Go through all files and store in what file and at what index do sequences exist.
         Always populate the 'NA' category to keep track of all IDs regardless of category.
         """
-        for file_id, file in enumerate(self.all_files):
+        tqdm.write("Creating Sequence Tracker...")
+        for file_id, file in enumerate(tqdm(self.all_files, total=len(self.all_files))):
             # Read file
             data = self.load_file(file)
             data["file_id"] = file_id

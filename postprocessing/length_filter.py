@@ -13,6 +13,7 @@ from typing import Optional
 import pandas as pd
 
 from abnumber import Chain, ChainParseError
+from tqdm import tqdm
 
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
 
@@ -78,7 +79,8 @@ class LengthFilter(PostProcessor):
         # Load list of files
         self.get_files_list(directory_or_file_path=self.directory_or_file_path)
 
-        for file in self.all_files:
+        tqdm.write("Filtering by length...")
+        for file in tqdm(self.all_files, total=len(self.all_files)):
             data = self.load_file(file_path=file)
 
             # Copy data in order to keep the original file
