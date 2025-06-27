@@ -12,8 +12,6 @@ from pathlib import Path
 
 from Bio.Seq import Seq
 
-import pandas as pd
-
 
 def check_header_request(text: str, request: str, ignore_case: bool = True) -> bool:
     """## Checks if the requested term to extract from the header is supported by OAS.
@@ -272,11 +270,3 @@ def convert_query_dict_to_tuple(
     for key, value in query_dict.items():
         output_list.append((key, value))
     return tuple(output_list)
-
-
-def unlink_empty_dataframes(data: pd.DataFrame, path_to_data: Path) -> None:
-    """
-    ## Checks if data is empty and unlinks the file
-    """
-    if data.empty:
-        path_to_data.unlink(missing_ok=True)
