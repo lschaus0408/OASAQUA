@@ -1,6 +1,5 @@
 ## OAS AQUA
----
-**AQUA** (Antibody Querying, Unpacking, and Analysis) is a Python-based pipeline for downloading, formatting, and refining antibody sequence data from the [Observed Antibody Space (OAS)](https://opig.stats.ox.ac.uk/webapps/oas/). Designed with machine learning and bioinformatics workflows in mind, AQUA retrieves data based on custom user queries, processes it into structured formats, and performs post-processing to ensure data quality and usability.
+__AQUA__ (Antibody Querying, Unpacking, and Analysis) is a Python-based pipeline for downloading, formatting, and refining antibody sequence data from the [Observed Antibody Space (OAS)](https://opig.stats.ox.ac.uk/webapps/oas/). Designed with machine learning and bioinformatics workflows in mind, AQUA retrieves data based on custom user queries, processes it into structured formats, and performs post-processing to ensure data quality and usability.
 ---
 
 ## Features
