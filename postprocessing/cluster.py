@@ -206,6 +206,8 @@ class Cluster(PostProcessor):
             else:
                 seen_files.add(file_id)
             unfiltered_data = self.load_file(file_path=self.all_files[file_id])
+            if unfiltered_data.empty:
+                continue
             current_id_set = [id_pair for id_pair in id_list if id_pair[0] == file_id]
             unfiltered_data["sequence_id"] = current_id_set
             # Create dataframe if it doesn't exist

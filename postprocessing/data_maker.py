@@ -251,6 +251,9 @@ class DataMaker(PostProcessor):
         for file_id, file in enumerate(tqdm(self.all_files, total=len(self.all_files))):
             # Read file
             data = self.load_file(file)
+            if data.empty:
+                file.unlink(missing_ok=True)
+                continue
             data["file_id"] = file_id
             sequence_ids: list[SequenceIdType] = list(zip(data.file_id, data.index))
             data["Tuple"] = sequence_ids

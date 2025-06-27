@@ -82,6 +82,9 @@ class LengthFilter(PostProcessor):
         tqdm.write("Filtering by length...")
         for file in tqdm(self.all_files, total=len(self.all_files)):
             data = self.load_file(file_path=file)
+            if data.empty:
+                file.unlink(missing_ok=True)
+                continue
 
             # Copy data in order to keep the original file
             filtered_data = data.copy()

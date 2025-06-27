@@ -87,6 +87,10 @@ class RemoveRedundant(PostProcessor):
             data = self.load_file(filename)
             data.reset_index(inplace=True, drop=True)
 
+        if data.empty:
+            filename.unlink(missing_ok=True)
+            return
+
         # Register indices that need to be dropped
         drop_indexes = []
         for iterator, sequence in enumerate(data["Sequence_aa"]):

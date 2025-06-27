@@ -159,6 +159,9 @@ class Encoder(PostProcessor):
 
         for index, file in enumerate(self.all_files):
             data = self.load_file(file_path=file)
+            if data.empty:
+                file.unlink(missing_ok=True)
+                continue
             # Remove indices where the sequence is greater than the pad_size
             data["sequence_lenght"] = data["Sequence_aa"].str.len()
             filtered_data = data[data["sequence_lenght"] <= self.pad_size]

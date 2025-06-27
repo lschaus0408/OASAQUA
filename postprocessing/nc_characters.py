@@ -71,6 +71,9 @@ class NCCharacters(PostProcessor):
         tqdm.write("Removing Non-Canonical Characters...")
         for file in tqdm(self.all_files, total=len(self.all_files)):
             data = self.load_file(file_path=file)
+            if data.empty:
+                file.unlink(missing_ok=True)
+                continue
             filtered_data = data[
                 data["Sequence_aa"].apply(self.contains_canonical_characters)
             ]

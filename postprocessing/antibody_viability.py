@@ -139,6 +139,9 @@ class AntibodyViability(PostProcessor):
 
         for file_number, file in enumerate(self.all_files):
             self.load_file(file_path=file, overwrite=True)
+            if self.data.empty:
+                file.unlink(missing_ok=True)
+                continue
             tqdm.write(
                 f"Starting antibody viability filtering for file {file_number}..."
             )
