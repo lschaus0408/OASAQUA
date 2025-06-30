@@ -137,13 +137,13 @@ class AntibodyViability(PostProcessor):
         if self.directory_or_file_path:
             self.get_files_list(directory_or_file_path=self.directory_or_file_path)
 
-        for file_number, file in enumerate(self.all_files):
+        for _, file in enumerate(self.all_files):
             self.load_file(file_path=file, overwrite=True)
             if self.data.empty:
                 file.unlink(missing_ok=True)
                 continue
             tqdm.write(
-                f"Starting antibody viability filtering for file {file_number}..."
+                f"Starting antibody viability filtering for file {str(file.stem)}..."
             )
             self.filter_sequences(
                 filter_strictness=self.filter_strictness,
@@ -475,21 +475,28 @@ class AntibodyViability(PostProcessor):
         return (False, conserved_23, conserved_104, amino_acid_by_position)
 
     def _package_batches(
-        self, sequences: pd.Series, batch_size: int = 1000
+        self,
+        sequences: pd.Series,
+        batch_size: int = 1000,
+        check_characters: bool = False,
     ) -> tuple[tuple[str, str]]:
         """
         ## Packages sequences to anarci desired format
         Format is [("seq_name_1", "SEQVENCE"), ... ("seq_name_n", "SEQVENCE")]
         """
-        package = []
+        package: list[tuple[str, str]] = []
         # First check sequence is complete
         for iterator, sequence in enumerate(sequences):
-            if self._legal_characters(sequence):
+            if check_characters:
+                if self._legal_characters(sequence=sequence):
+                    package.append((f"Seq_{iterator}", sequence))
+            else:
                 package.append((f"Seq_{iterator}", sequence))
+
         if package:
             # Keep track of sequence status using sequence tracker
             self.sequence_tracker.add_default_identities(
-                [(0, i) for i in range(len(package))],
+                [(0, int(identifier.split("_")[1])) for identifier, _ in package],
                 default_status="keep",
                 sequences=[seq[1] for seq in package],
             )
