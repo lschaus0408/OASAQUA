@@ -26,7 +26,9 @@ class NCCharacters(PostProcessor):
     the non-canonical characters list.
     """
 
+    # Get canonical characters but remove X
     CANONICAL_CHARACTERS = list(Encoder.ALL_AMINO_ACIDS.keys())
+    CANONICAL_CHARACTERS.remove("X")
 
     def __init__(
         self,
