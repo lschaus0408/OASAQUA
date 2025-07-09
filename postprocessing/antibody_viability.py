@@ -13,7 +13,6 @@ import math
 from pathlib import Path
 from typing import Union, Optional, Literal
 from collections import defaultdict, Counter
-from itertools import chain as iter_chain
 from functools import partial
 
 from anarci import anarci
@@ -32,7 +31,20 @@ class AntibodyViability(PostProcessor):
     FINISH DOCSTRINGS
     """
 
+    # Defining constants
     _assign_germline = True
+    CONSERVED_POSITIONS = {23, 104, 118}
+    CRITICAL_CYS_POSITIONS = {"23", "104"}
+    FWR2_POSITIONS = set(range(39, 56))
+    FWR3_POSITIONS = set(range(66, 105))
+    CDR3_POSITIONS = set(range(105, 118))
+    FWR4_POSITIONS = set(range(118, 129))
+    START_POSITION = 27
+    SKIPPED_CDR_POSITIONS_LOOSE = {
+        *map(str, range(27, 39)),
+        *map(str, range(56, 66)),
+        *map(CDR3_POSITIONS),
+    }
 
     def __init__(
         self,
@@ -220,44 +232,54 @@ class AntibodyViability(PostProcessor):
         # For Sequences that have passed the check, we want to know what AAs are at each position
         amino_acids_by_position_list = []
 
-        numbered_batch = self.get_anarci_numbering(sequences=batch)
-        for index, numbered_sequence in enumerate(numbered_batch[0]):
+        # Unpack sequence_ids for faster lookups
+        batch_sequence_ids = [seq_id for seq_id, _ in batch]
+
+        numbered_batch, batch_sequence_info = self.get_anarci_numbering(sequences=batch)
+        for index, (sequence_id, numbered_sequence, sequence_info) in enumerate(
+            zip(batch_sequence_ids, numbered_batch, batch_sequence_info)
+        ):
             # From simplest to hardest to calculate we filter out sequences
 
             # If anarci couldn't align the sequence, set status to false
             if numbered_sequence is None:
-                batch_status[batch[index][0]] = False
+                batch_status[sequence_id] = False
                 continue
 
             # Check if it aligns well to its designated germline
-            for gene in ["v_gene", "j_gene"]:
-                if numbered_batch[1][index][0]["germlines"][gene][1] < 0.5:
-                    batch_status[batch[index][0]] = False
+            germline_scores = sequence_info[0].get("germlines", {})
+            if any(
+                germline_scores.get(gene, [None, 0])[1] < 0.5
+                for gene in ("v_gene", "j_gene")
+            ):
+                batch_status[batch[index][0]] = False
 
             # Check for by position issues with sequence
-            positional_issues = self._flagged_by_position(
-                numbered_sequence, sequence_info=numbered_batch[1][index]
+            is_flagged, has_cys23, has_cys104, aa_by_position = (
+                self._flagged_by_position(
+                    numbered_sequence, sequence_info=numbered_batch[1][index]
+                )
             )
             # If first return value is ever True, the sequence has been flagged
-            if positional_issues[0]:
-                batch_status[batch[index][0]] = False
+            if is_flagged:
+                batch_status[sequence_id] = False
                 continue
 
-            conserved_23.append(positional_issues[1])
-            conserved_104.append(positional_issues[2])
-            amino_acids_by_position_list.append(positional_issues[3])
+            conserved_23.append(has_cys23)
+            conserved_104.append(has_cys104)
+            amino_acids_by_position_list.append(aa_by_position)
 
         # Check plausible probabilities of mutations
-        if len(conserved_23) != 0:
-            false_read_position_23 = 1 - (conserved_23.count(True) / len(conserved_23))
+        if conserved_23:
+            false_read_position_23 = 1 - (sum(conserved_23) / len(conserved_23))
         else:
             false_read_position_23 = 0
-        if len(conserved_104) != 0:
-            false_read_position_104 = 1 - (
-                conserved_104.count(True) / len(conserved_104)
-            )
+
+        if conserved_104:
+            false_read_position_104 = 1 - (sum(conserved_104) / len(conserved_104))
         else:
             false_read_position_104 = 0
+
         # Get false read probability (i.e. sequencing error as opposed to mutation)
         if filter_strictness == "loose":
             false_read_probability = min(
@@ -274,9 +296,11 @@ class AntibodyViability(PostProcessor):
         )
 
         # Second round of filtering
-        for index, numbered_sequence in enumerate(numbered_batch[0]):
+        for index, (sequence_id, numbered_sequence) in enumerate(
+            zip(batch_sequence_ids, numbered_batch)
+        ):
             # Skip the ones that have been filtered already
-            if batch[index][0] in batch_status:
+            if sequence_id in batch_status:
                 continue
             if self.filter_by_residue_probability(
                 numbered_sequence=numbered_sequence,
@@ -284,7 +308,7 @@ class AntibodyViability(PostProcessor):
                 probability_threshold=false_read_probability,
                 residue_probabilities=residue_probabilities_by_position,
             ):
-                batch_status[batch[index][0]] = False
+                batch_status[sequence_id] = False
 
         return batch_status
 
@@ -298,62 +322,65 @@ class AntibodyViability(PostProcessor):
         """
         ## Filters residues based on their per-residue probabilities
         """
+        # Precompute sets
+        if filter_strictness == "loose":
+            skip_positions = self.SKIPPED_CDR_POSITIONS_LOOSE
+        else:
+            skip_positions = set()
+
         # Go through each position (Due to the structure the positions are at [0][0])
         for position in numbered_sequence[0][0]:
-            if position[1] == "-":
+            position_number, position_letter, aa = (
+                position[0][0],
+                position[0][1],
+                position[1],
+            )
+            if aa == "-":
                 continue
 
+            position_string = str(position_number)
+            position_name = position_string + position_letter
+
             # Always delete non-cysteines at the following positions
-            if position[0][0] in ["23", "104"] and position[1] != "C":
+            if position_string in self.CRITICAL_CYS_POSITIONS and aa != "C":
                 return True
 
             # Skip CDRs since they can have much lower probabilities naturally
-            if (
-                position[0][0]
-                in iter_chain(range(27, 39), range(56, 66), range(105, 118))
-                and filter_strictness == "loose"
-            ):
+            if position_string in skip_positions:
                 continue
 
-            position_name = str(position[0][0]) + position[0][1]
             # Check if the probability is below the threshold
             if (
-                residue_probabilities[position_name][position[1]]
+                residue_probabilities.get(position_name, {}).get(aa, 1.0)
                 <= probability_threshold
             ):
                 return True
         return False
 
     def get_residue_probabilities(
-        self, residue_list: list
+        self, residue_list: list[dict[str, str]]
     ) -> dict[str, dict[str, float]]:
         """
         # Returns the probabilities of each residue at each position
         """
         # Merge all dictionaries
-        merged_residue_dictionary = defaultdict(list)
+        merged_residue_dictionary = defaultdict(Counter)
         for sequence_position_data in residue_list:
             for key, value in sequence_position_data.items():
-                merged_residue_dictionary[key].append(value)
+                merged_residue_dictionary[key][value] += 1
 
-        output_dict = {}
-        # Iterate through all numbered positions
-        for position, value in merged_residue_dictionary.items():
-            # Get position counts
-            position_counter = Counter(value)
-            total_counts = position_counter.total()
-
-            # Iterate through counter items to update with residue probabilities
-            for item, _ in position_counter.items():
-                position_counter[item] /= total_counts
-            # Update dictionary
-            output_dict[position] = position_counter
+        # Normalize counts into probabilities
+        output_dict = {
+            position: {
+                value: count / sum(counter.values()) for value, count in counter.items()
+            }
+            for position, counter in merged_residue_dictionary.items()
+        }
 
         return output_dict
 
-    @staticmethod
     def _flagged_by_position(
-        numbered_sequence: list[tuple], sequence_info: list[dict]
+        self, numbered_sequence: list[tuple], sequence_info: list[dict]
     ) -> tuple[bool, Optional[int], Optional[int], Optional[dict]]:
         """
         ## Flags based off of certain positions
@@ -376,100 +403,110 @@ class AntibodyViability(PostProcessor):
         fwr3_adjustment = 0
         rabbit_position_84 = 1
         start_found = False
+        # Trackers
         conserved_23 = False
         conserved_104 = False
         amino_acid_by_position = {}
+
+        # Inputs
+        chain_type = sequence_info[0]["chain_type"]
+        species = sequence_info[0]["species"]
 
         # Frame sequence registry of frames we want to check the length of
         frames = {"fwr2": 0, "fwr3": 0, "fwr4": 0, "cdr3": 0}
 
         for position in numbered_sequence[0][0]:
-            # Check if framework 1
-            if position[0][0] < 27:
-                # Find the starting position as sequencing can sometimes start later than 1 in fwr1
-                if position[1] != "-" and not start_found:
-                    start_found = True
+            position_index, position_letter, aa = (
+                position[0][0],
+                position[0][1],
+                position[1],
+            )
+            position_string = str(position_index) + position_letter
 
-                # If the position is skipped and the start has been found
-                if position[1] == "-" and start_found:
-                    # Rabbit is a special case where positions 2 and 10 can be skipped
-                    if sequence_info[0]["species"] == "rabbit":
-                        if position[0][0] not in [2, 10]:
+            # Skip unlabeled positions
+            if aa == "-":
+                # Check for skips after seq starts fwr1
+                if position_index < self.START_POSITION:
+                    if start_found:
+                        if species == "rabbit" and position_index not in {2, 10}:
                             return (True, None, None, None)
-                    # Else only position 10 can be skipped
-                    if position[0][0] != 10:
-                        return (True, None, None, None)
-
-            # Unlabeled positions are skipped
-            if position[1] == "-":
+                        elif position_index != 10:
+                            return (True, None, None, None)
                 continue
 
+            # Mark the start of the sequence
+            if position_index < self.START_POSITION and not start_found:
+                start_found = True
+
+            # Register
+            amino_acid_by_position[position_string] = aa
+
             # Register important frames
-            if position[0][0] in range(39, 56):
+            if position_index in self.FWR2_POSITIONS:
                 frames["fwr2"] += 1  # Register that AA is in fwr2
 
-            if position[0][0] in range(66, 105):
+            if position_index in self.FWR3_POSITIONS:
                 frames["fwr3"] += 1  # Register that AA is in fwr3
                 # Check if fwr3 needs to be adjusted
-                if position[0][0] == 73:
+                if position_index == 73:
                     fwr3_adjustment += 1
                 # These can be absent in the light chain, we only check the first possible alignment
-                if position[0][0] in [81, 82] and sequence_info[0]["chain_type"] == "L":
+                if position_index in {81, 82} and chain_type == "L":
                     absent_residues -= 1
                 # This rabbit specific position can be absent
-                if position[0][0] == 84 and sequence_info[0]["species"] == "rabbit":
+                if position_index == 84 and species == "rabbit":
                     rabbit_position_84 -= 1
 
-            if position[0][0] in range(105, 118):
+            if position_index in self.CDR3_POSITIONS:
                 frames["cdr3"] += 1  # Register that AA is in cdr3
 
-            if position[0][0] in range(118, 129):
+            if position_index in self.FWR4_POSITIONS:
                 frames["fwr4"] += 1  # Register that AA is in fwr4
 
             # Check if flagged by anarci
-            if position[0][1] != " ":
+            if position_letter != " ":
                 # CDR3 is between 105 and 117 in imgt
-                if position[0][0] < 105 or position[0][0] > 117:
+                if position_index not in self.CDR3_POSITIONS:
                     return (True, None, None, None)
-            # Check conserved residues
-            if position[0][0] in [23, 104, 118]:
-                conserved_residues += 1
-                if position[0][0] == 23 and position[1] == "C":
-                    conserved_23 = True
-                if position[0][0] == 104 and position[1] == "C":
-                    conserved_104 = True
 
-            # Register all positions and their amino acids in a dict
-            amino_acid_by_position[str(position[0][0]) + position[0][1]] = position[1]
+            # Check conserved residues
+            if position_index in self.CONSERVED_POSITIONS:
+                conserved_residues += 1
+                if position_index == 23 and aa == "C":
+                    conserved_23 = True
+                if position_index == 104 and aa == "C":
+                    conserved_104 = True
 
         # Maybe we can make this more efficient by pre-adjusting the lengths
         # Check lengths
         if frames["fwr2"] < 17:  # FWR2 of length less than 17 are faulty
             return (True, None, None, None)
-        if sequence_info[0]["chain_type"] == "H":
+
+        if chain_type == "H":
             if frames["cdr3"] > 37:  # CDR3 of length more than 37 are chimeric
                 return (True, None, None, None)
             if (
                 frames["fwr3"] - fwr3_adjustment < 38
             ):  # FWR3 of adjusted length less than 38 are faulty
                 return (True, None, None, None)
-        if sequence_info[0]["species"] == "rabbit":
-            if (
-                frames["fwr3"] - fwr3_adjustment + rabbit_position_84 < 38
-            ):  # FWR3 of rabbits adjusted with length less than 38 are faulty
-                return (True, None, None, None)
-            if frames["fwr4"] < 10:  # FWR4 of rabbits less than 10 are faulty
-                return (True, None, None, None)
-        if sequence_info[0]["chain_type"] == "L":
+
+        if chain_type == "L":
             if (
                 frames["fwr3"] + absent_residues - fwr3_adjustment < 38
             ):  # Light chain FWR3 adjusted with length less than 38 are faulty
                 return (True, None, None, None)
             if frames["fwr4"] < 10:
                 return (True, None, None, None)
-        if frames["fwr4"] < 11:
-            return (True, None, None, None)
-        if frames["fwr4"] > 13:
+
+        if species == "rabbit":
+            if (
+                frames["fwr3"] - fwr3_adjustment + rabbit_position_84 < 38
+            ):  # FWR3 of rabbits adjusted with length less than 38 are faulty
+                return (True, None, None, None)
+            if frames["fwr4"] < 10:  # FWR4 of rabbits less than 10 are faulty
+                return (True, None, None, None)
+
+        if frames["fwr4"] < 11 or frames["fwr4"] > 13:
             return (True, None, None, None)
 
         return (False, conserved_23, conserved_104, amino_acid_by_position)
