@@ -43,7 +43,7 @@ class AntibodyViability(PostProcessor):
     SKIPPED_CDR_POSITIONS_LOOSE = {
         *map(str, range(27, 39)),
         *map(str, range(56, 66)),
-        *map(CDR3_POSITIONS),  # type: ignore
+        *map(str, range(105, 118)),
     }
 
     def __init__(
