@@ -184,22 +184,30 @@ class AntibodyViability(PostProcessor):
         data_chunks = self._package_batches(
             sequences=self.data["Sequence_aa"], batch_size=batch_size  # type: ignore
         )
-        # Partially apply filter_strictness alreadys
-        partial_process_batch = partial(
-            self.process_batch, filter_strictness=filter_strictness
-        )
-
-        all_results = []
-        # Multiprocessing of sequence batches
-        with Pool(processes=ncpus) as pool:
-            results = list(
-                tqdm(
-                    pool.uimap(partial_process_batch, data_chunks),
-                    total=len(data_chunks),
-                )
+        if self.n_jobs > 1:
+            # Partially apply filter_strictness alreadys
+            partial_process_batch = partial(
+                self.process_batch, filter_strictness=filter_strictness
             )
-            for sequence_status in results:
-                all_results.append(sequence_status)
+
+            all_results = []
+            # Multiprocessing of sequence batches
+            with Pool(processes=ncpus) as pool:
+                results = list(
+                    tqdm(
+                        pool.uimap(partial_process_batch, data_chunks),
+                        total=len(data_chunks),
+                    )
+                )
+                for sequence_status in results:
+                    all_results.append(sequence_status)
+        else:
+            for chunk in tqdm(data_chunks):
+                all_results = []
+                result = self.process_batch(
+                    batch=chunk, filter_strictness=filter_strictness
+                )
+                all_results.append(result)
 
         # Remove sequences from Sequence Tracker that show up in all_results
         merged_results = self._combine_dictionaries(all_results)
@@ -234,9 +242,9 @@ class AntibodyViability(PostProcessor):
         # Unpack sequence_ids for faster lookups
         batch_sequence_ids = [seq_id for seq_id, _ in batch]
 
-        numbered_batch, batch_sequence_info = self.get_anarci_numbering(sequences=batch)
+        numbered_batch = self.get_anarci_numbering(sequences=batch)
         for index, (sequence_id, numbered_sequence, sequence_info) in enumerate(
-            zip(batch_sequence_ids, numbered_batch, batch_sequence_info)
+            zip(batch_sequence_ids, numbered_batch[0], numbered_batch[1])
         ):
             # From simplest to hardest to calculate we filter out sequences
 
@@ -296,7 +304,7 @@ class AntibodyViability(PostProcessor):
 
         # Second round of filtering
         for index, (sequence_id, numbered_sequence) in enumerate(
-            zip(batch_sequence_ids, numbered_batch)
+            zip(batch_sequence_ids, numbered_batch[0])
         ):
             # Skip the ones that have been filtered already
             if sequence_id in batch_status:
@@ -321,12 +329,12 @@ class AntibodyViability(PostProcessor):
         """
         ## Filters residues based on their per-residue probabilities
         """
+
         # Precompute sets
         if filter_strictness == "loose":
             skip_positions = self.SKIPPED_CDR_POSITIONS_LOOSE
         else:
             skip_positions = set()
-
         # Go through each position (Due to the structure the positions are at [0][0])
         for position in numbered_sequence[0][0]:
             position_number, position_letter, aa = (
