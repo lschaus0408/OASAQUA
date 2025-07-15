@@ -167,3 +167,4 @@ cython_debug/
 .RData
 .Rhistory
 /R_scripts/default\ matrix.txt
+default\ matrix.txt
