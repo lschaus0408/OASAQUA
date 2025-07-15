@@ -43,7 +43,7 @@ class AntibodyViability(PostProcessor):
     SKIPPED_CDR_POSITIONS_LOOSE = {
         *map(str, range(27, 39)),
         *map(str, range(56, 66)),
-        *map(CDR3_POSITIONS),
+        *map(CDR3_POSITIONS),  # type: ignore
     }
 
     def __init__(
@@ -121,7 +121,6 @@ class AntibodyViability(PostProcessor):
         self.save_file(file_path=self.path, data=save_data)
         tqdm.write("Finished removing sequences!")
 
-    # PROCESS SHOULDN'T HAVE ANY ARGUMENTS
     def process(
         self,
     ):
@@ -183,9 +182,9 @@ class AntibodyViability(PostProcessor):
                 batch_size = max_batch_size
 
         data_chunks = self._package_batches(
-            sequences=self.data["Sequence_aa"], batch_size=batch_size
+            sequences=self.data["Sequence_aa"], batch_size=batch_size  # type: ignore
         )
-        # Partially apply filter_strictness already
+        # Partially apply filter_strictness alreadys
         partial_process_batch = partial(
             self.process_batch, filter_strictness=filter_strictness
         )
@@ -516,7 +515,7 @@ class AntibodyViability(PostProcessor):
         sequences: pd.Series,
         batch_size: int = 1000,
         check_characters: bool = False,
-    ) -> tuple[tuple[str, str]]:
+    ) -> tuple[list[tuple[str, str]], ...]:
         """
         ## Packages sequences to anarci desired format
         Format is [("seq_name_1", "SEQVENCE"), ... ("seq_name_n", "SEQVENCE")]
