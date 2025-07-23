@@ -17,7 +17,7 @@ import subprocess
 import ast
 
 from pathlib import Path
-from typing import Optional, Literal, Generator
+from typing import Optional, Literal, Generator, Any
 
 import pandas as pd
 
@@ -358,7 +358,9 @@ class Cluster(PostProcessor):
             self.save_file(file_path=output_file_name, data=last_dataframe)
 
     @staticmethod
-    def chunk_df(data: pd.DataFrame, max_size: int) -> Generator[pd.DataFrame]:
+    def chunk_df(
+        data: pd.DataFrame, max_size: int
+    ) -> Generator[pd.DataFrame, Any, Any]:
         """
         ## Yields consecutive chunks of a dataframe
         """
