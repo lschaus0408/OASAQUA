@@ -147,8 +147,10 @@ class Cluster(PostProcessor):
                 # Scamble data if desired
                 if self.scramble_data_before_cluster:
                     data = data.sample(frac=1).reset_index(drop=True)
+                # Change species name to be compatible with file system
+                species_file_name = species.replace("/", "_").replace(".", "_")
                 # Save file in folder for fastBCR
-                data_path = Path(fastbcr_dir) / f"fastbcr_{species}_temp.csv"
+                data_path = Path(fastbcr_dir) / f"fastbcr_{species_file_name}_temp.csv"
                 self.save_file(file_path=data_path, data=data)
             # Run fastBCR
             self.run_fastbcr(tempdir=fastbcr_dir)
@@ -197,7 +199,7 @@ class Cluster(PostProcessor):
         """
         ## Creates one file for usage in fastBCR out of the id_list
         """
-        filtered_data = None
+        filtered_data = None  # type: ignore
         seen_files = set()
 
         for file_id, _ in id_list:
@@ -212,7 +214,7 @@ class Cluster(PostProcessor):
             unfiltered_data["sequence_id"] = current_id_set
             # Create dataframe if it doesn't exist
             if filtered_data is None:
-                filtered_data = unfiltered_data.loc[
+                filtered_data: pd.DataFrame = unfiltered_data.loc[
                     unfiltered_data["Species"] == species_id
                 ]
             else:
@@ -323,7 +325,7 @@ class Cluster(PostProcessor):
         # Open each file in order
         for file_index, dataset in assembly_datastructure.items():
             data = pd.read_csv(
-                self.all_files[file_index], dtype=DTYPE_DICT, index_col=0
+                self.all_files[int(file_index)], dtype=DTYPE_DICT, index_col=0
             )
             # Add rows from the dataset to the dict according to the key
             for _, dataset_value in dataset.items():

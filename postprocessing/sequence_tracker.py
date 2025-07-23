@@ -8,7 +8,7 @@ Tracks sequences across multiple files for postprocessors.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Literal, TypeAlias, Iterable
+from typing import Optional, Literal, TypeAlias, Iterable, Any
 from collections import defaultdict
 
 SequenceIdType: TypeAlias = tuple[int, int]
@@ -52,20 +52,20 @@ class SequenceTracker:
     identities: dict[SequenceIdType, SequenceStatus] = field(
         default_factory=lambda: defaultdict(SequenceStatus)
     )
-    categories: Optional[dict[str, list[SequenceIdType]]] = field(
+    categories: dict[str, list[SequenceIdType]] = field(
         default_factory=lambda: defaultdict(list)
     )
-    inverted_categories: Optional[dict[SequenceIdType, str]] = field(
+    inverted_categories: dict[SequenceIdType, str] = field(
         default_factory=lambda: defaultdict(str)
     )
-    deleted: Optional[list[str]] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
 
     def add_default_identities(
         self,
         ids: Iterable[SequenceIdType],
         default_status: StatusType,
         overwrite: bool = False,
-        sequences: Optional[Iterable[str]] = None,
+        sequences: Optional[str] = None,
     ) -> None:
         """
         ## From sequence ids, creates the identities dict
@@ -106,8 +106,8 @@ class SequenceTracker:
         If the identifier doesn't exist, do nothing.
         """
         try:
-            for key in self.categories.keys():
-                self.categories[key].remove(identifier)
+            for value in self.categories.values():
+                value.remove(identifier)
         except ValueError as e:
             if verbose:
                 print(
@@ -126,7 +126,9 @@ class SequenceTracker:
         then by dataset, then by list of indices.
         The output datastructure is dict[file_id, dict[status, sequence_id]].
         """
-        assembly_datastructure = defaultdict(lambda: defaultdict(list))
+        assembly_datastructure: dict[Any, dict[Any, list[Any]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         # Iterate through the tracker
         for file_id, sequence_id in self.identities.keys():
             # Grab the sequence status
@@ -153,7 +155,7 @@ class SequenceTracker:
         self.inverted_categories = inverted
 
 
-def ordered_sequence_ids(sequence_ids=list[SequenceIdType]) -> list[SequenceIdType]:
+def ordered_sequence_ids(sequence_ids: list[SequenceIdType]) -> list[SequenceIdType]:
     """
     ## Orders SequenceIDs
     """
