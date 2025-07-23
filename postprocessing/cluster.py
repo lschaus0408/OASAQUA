@@ -141,6 +141,7 @@ class Cluster(PostProcessor):
 
             # Separate Files by Species
             for species, identifiers in self.sequence_tracker.categories.items():
+                print("Processing: ", species)
                 # Sort identifiers by file
                 identifiers.sort(key=lambda item: item[0])
                 data = self.assemble_files(id_list=identifiers, species_id=species)
