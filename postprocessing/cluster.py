@@ -245,17 +245,16 @@ class Cluster(PostProcessor):
             "-n",
             str(self.consensus_threshold),
         ]
-        if self.paired:
-            command_list.append("-p")
-            subprocess.run(
-                command_list,
-                check=True,
-            )
-        else:
-            subprocess.run(
-                command_list,
-                check=True,
-            )
+        try:
+            if self.paired:
+                command_list.append("-p")
+                subprocess.run(command_list, check=True, text=True, capture_output=True)
+            else:
+                subprocess.run(command_list, check=True, text=True, capture_output=True)
+        except subprocess.CalledProcessError as error:
+            print(error.stdout)
+            print(error.stderr)
+            raise error
 
     def sample_clonotypes(self, files: list[Path]) -> dict[SequenceIdType, StatusType]:
         """
