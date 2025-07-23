@@ -17,7 +17,7 @@ import subprocess
 import ast
 
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Optional, Literal, Generator
 
 import pandas as pd
 
@@ -64,6 +64,7 @@ class Cluster(PostProcessor):
         sample_per_cluster: int = 1,
         maximum_file_size_gb: Optional[float] = None,
         scramble_data_before_cluster: bool = True,
+        max_fastbcr_batch_size: int = 1_000_000,
     ):
         super().__init__(
             directory_or_file_path=directory_or_file_path,
@@ -92,6 +93,7 @@ class Cluster(PostProcessor):
         self.species_set: set = set()
         self.maximum_file_size = maximum_file_size_gb
         self.scramble_data_before_cluster = scramble_data_before_cluster
+        self.max_fastbcr_batch_size = max_fastbcr_batch_size
 
     def load_file(self, file_path: Path, overwrite=False):
         """
@@ -141,18 +143,30 @@ class Cluster(PostProcessor):
 
             # Separate Files by Species
             for species, identifiers in self.sequence_tracker.categories.items():
-                print("Processing: ", species)
+
+                print("Pre-processing (stage 1): ", species)
+
                 # Sort identifiers by file
                 identifiers.sort(key=lambda item: item[0])
-                data = self.assemble_files(id_list=identifiers, species_id=species)
+                data_all = self.assemble_files(id_list=identifiers, species_id=species)
+
                 # Scamble data if desired
                 if self.scramble_data_before_cluster:
-                    data = data.sample(frac=1).reset_index(drop=True)
+                    data_all = data_all.sample(frac=1).reset_index(drop=True)
+
                 # Change species name to be compatible with file system
                 species_file_name = species.replace("/", "_").replace(".", "_")
-                # Save file in folder for fastBCR
-                data_path = Path(fastbcr_dir) / f"fastbcr_{species_file_name}_temp.csv"
-                self.save_file(file_path=data_path, data=data)
+
+                for batch_index, data_chunk in enumerate(
+                    self.chunk_df(data_all, self.max_fastbcr_batch_size)
+                ):
+                    # Save file in folder for fastBCR
+                    batch_path = (
+                        Path(fastbcr_dir)
+                        / f"fastbcr_{species_file_name}_batch{batch_index:04d}.csv"
+                    )
+                    self.save_file(file_path=batch_path, data=data_chunk)
+
             # Run fastBCR
             self.run_fastbcr(tempdir=fastbcr_dir)
 
@@ -342,3 +356,14 @@ class Cluster(PostProcessor):
                 self.output_directory, f"fastBCR_Cluster_chunk_{save_iteration}.csv"
             )
             self.save_file(file_path=output_file_name, data=last_dataframe)
+
+    @staticmethod
+    def chunk_df(data: pd.DataFrame, max_size: int) -> Generator[pd.DataFrame]:
+        """
+        ## Yields consecutive chunks of a dataframe
+        """
+        if max_size <= 0:
+            yield data
+            return
+        for start in range(0, len(data), max_size):
+            yield data.iloc[start : start + max_size]
