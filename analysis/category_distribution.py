@@ -68,7 +68,7 @@ def main(arguments: ArgsTypes) -> None:
     # Analyze files
     for data in tqdm(data_list, total=len(data_list)):
         series = read_file(data, arguments.category)
-        counter.update(series)
+        counter.update(dict(series.value_counts()))
         total += len(series)
 
     # Build summary table
