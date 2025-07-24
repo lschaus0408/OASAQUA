@@ -49,7 +49,7 @@ class ConfigValidationError(Exception):
 @dataclass
 class OASRun:
     """
-    ## Object representing the config of an OASCS Run
+    ## Object representing the config of an OAS AQUA Run
     """
 
     run_number: int
@@ -103,7 +103,7 @@ def argparse_tuple_type(argument: str) -> tuple:
     return tuple(mapped_argument)
 
 
-def argparse_dict_type(argument: str) -> dict:
+def argparse_dict_type(argument: str) -> tuple:
     """
     ## Takes an argument from argparse and transforms it into a dict
     """
@@ -141,9 +141,9 @@ def oas_parser() -> ArgumentParser:
     --> TO DO: Finish Docstrings, add postprocessing to parser
     """
     parser = ArgumentParser(
-        prog="OAS API",
+        prog="OAS AQUA",
         description="A downloader, packaging tool, and dataset manager for OAS",
-        epilog="For more information on OAS API visit: INSERT URL HERE",
+        epilog="For more information on OAS AQUA visit: INSERT URL HERE",
     )
     parser.add_argument(
         "-p",
@@ -208,7 +208,7 @@ def oas_parser() -> ArgumentParser:
 
 def load_config(path: Path, file_format: FileFormatType = "yaml") -> dict:
     """
-    ## Loads the OASCS Config
+    ## Loads the OAS AQUA Config
     Config file should be in json format.
     Returns a dict
     """
@@ -232,7 +232,7 @@ def parse_config_file(
     config: dict[str, list[dict[str, Any]]], file_format: FileFormatType = "yaml"
 ) -> list[OASRun]:
     """
-    ## Parses OASCS YAML Configs
+    ## Parses OAS AQUA YAML Configs
     """
     runs: list[OASRun] = []
 
