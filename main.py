@@ -19,8 +19,7 @@ import importlib.util
 
 from os.path import join
 from pathlib import Path
-from typing import Callable, Literal, Optional, TypeAlias, Union
-from argparse import ArgumentParser
+from typing import Callable, Literal, Optional, TypeAlias, Union, cast
 
 from tqdm import tqdm
 
@@ -35,6 +34,7 @@ from oas_parser import (
     parse_config_file,
     OASRun,
     ConfigValidationError,
+    ArgsTypes,
 )
 
 
@@ -345,24 +345,6 @@ class API:
                 result.append((key, value))
         return tuple(result)
 
-    def set_database_path(self, custom_path: Optional[str] = None):
-        """
-        ## Sets the path for the database that is to be accessed.
-        ### Args:
-                    \t -custom_path {Optional[str]} -- Files dictionary is taken from that file.
-        """
-        # Set database path
-        if custom_path is not None:
-            self.downloader.file_path = custom_path
-        elif self.database == "unpaired":
-            self.downloader.file_path = (
-                "./OAS_API/files/OAS_files_dictionary_unpaired.json"
-            )
-        else:
-            self.downloader.file_path = (
-                "./OAS_API/files/OAS_files_dictionary_paired.json"
-            )
-
     def get_dataframe(self):
         """
         ## Method that calls csvreader to create the dataframe in the desired format.
@@ -533,7 +515,7 @@ class API:
         # finally to have this step happen either way
         finally:
             for file in files:
-                new_path = new_directory + "/" + file
+                new_path = Path(new_directory) / file
                 os.rename(
                     join(self.downloader.file_destination, file),
                     join(self.downloader.file_destination, new_path),
@@ -559,7 +541,7 @@ class API:
             ]
 
 
-def config_from_file(arguments: ArgumentParser) -> list[OASRun]:
+def config_from_file(arguments: ArgsTypes) -> list[OASRun]:
     """
     ## Gets run configs from file
     """
@@ -570,7 +552,7 @@ def config_from_file(arguments: ArgumentParser) -> list[OASRun]:
     return parsed_config
 
 
-def config_from_cli(arguments: ArgumentParser) -> list[OASRun]:
+def config_from_cli(arguments: ArgsTypes) -> list[OASRun]:
     """
     ## Gets run configs from command line
     """
@@ -613,7 +595,7 @@ def config_from_cli(arguments: ArgumentParser) -> list[OASRun]:
     return [current_run]
 
 
-def run_main(oasrun: OASRun) -> OASRun:
+def run_main(oasrun: OASRun) -> API:
     """
     ## Runs main program
     """
@@ -746,7 +728,7 @@ def import_class_from_file(class_name: str, class_path: Path):
 
 
 if __name__ == "__main__":
-    args = oas_parser().parse_args()
+    args = cast(ArgsTypes, oas_parser().parse_args())
 
     # Parse inputs
     if args.file_config is not None:

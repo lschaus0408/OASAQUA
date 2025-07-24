@@ -110,7 +110,7 @@ class DownloadOAS:
         # Clean up
         self.clean_up()
 
-    def set_search(self, search: list[tuple[tuple[str, str]]]) -> None:
+    def set_search(self, search: list[tuple[tuple[str, str], ...]]) -> None:
         """Setter for search attribute"""
         self.search = search
 
@@ -160,6 +160,7 @@ class DownloadOAS:
         """
         ## Creates Queries from parsed user-queries
         """
+        assert self.search is not None
         queries_list = []
         for pair in self.search:
             # Make sure a category is actually passed
@@ -264,7 +265,7 @@ class DownloadOAS:
         # End message
         tqdm.write("\nFinished Downloading Files")
 
-    def unpack(self, path: Optional[str] = None) -> None:
+    def unpack(self, path: Optional[Path] = None) -> None:
         """
         ## Unzips the files at self.file_destination and extracts the information.
         ### Args: \n
@@ -274,7 +275,7 @@ class DownloadOAS:
         if path is None:
             path = self.file_destination
         # List all files in the directory that contain a .gz
-        filepath = Path(path).glob("*.gz")
+        filepath = path.glob("*.gz")
 
         try:
             # Registers the gz unpacker from the helper_functions module

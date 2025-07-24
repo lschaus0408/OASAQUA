@@ -12,7 +12,7 @@ communicating with the post-processing tools.
 
 from pathlib import Path
 from typing import Literal, Any, TypeAlias
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
 
 import re
@@ -44,6 +44,22 @@ class ConfigValidationError(Exception):
             return f"[{self.config}] {self.message}"
         else:
             return self.message
+
+
+class ArgsTypes(Namespace):
+    """
+    ## Argparse type definitions
+    """
+
+    paired: bool
+    output_directory: str
+    filename: str
+    query: dict
+    metadata: tuple
+    data: tuple
+    processing_mode: Literal["Individual", "Bulk", "Split"]
+    keep_downloads: Literal["keep", "delete", "move"]
+    file_config: str
 
 
 @dataclass
