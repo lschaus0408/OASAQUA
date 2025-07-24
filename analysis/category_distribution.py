@@ -34,7 +34,9 @@ def read_file(file_path: Path, usecols: str) -> pd.DataFrame:
     """
     ## Returns a Dataframe from a csv file
     """
-    return pd.read_csv(filepath_or_buffer=file_path, usecols=usecols, dtype=DTYPE_DICT)
+    return pd.read_csv(
+        filepath_or_buffer=file_path, usecols=[usecols], dtype=DTYPE_DICT
+    )
 
 
 def read_directory(directory_path: Path) -> list[Path]:
