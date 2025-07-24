@@ -143,7 +143,7 @@ def oas_parser() -> ArgumentParser:
     parser = ArgumentParser(
         prog="OAS AQUA",
         description="A downloader, packaging tool, and dataset manager for OAS",
-        epilog="For more information on OAS AQUA visit: INSERT URL HERE",
+        epilog="For more information on OAS AQUA visit: https://github.com/lschaus0408/OASAQUA",
     )
     parser.add_argument(
         "-p",
