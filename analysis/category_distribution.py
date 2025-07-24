@@ -59,9 +59,9 @@ def main(arguments: ArgsTypes) -> None:
 
     # Get files
     if arguments.file:
-        data_list = [arguments.file]
+        data_list = [Path(arguments.file)]
     else:
-        data_list = read_directory(arguments.directory)
+        data_list = read_directory(Path(arguments.directory))
 
     # Analyze files
     for data in tqdm(data_list, total=len(data_list)):
