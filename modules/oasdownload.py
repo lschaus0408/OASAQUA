@@ -25,7 +25,7 @@ import json
 import requests
 
 from tqdm import tqdm
-from wget import bar_adaptive, download
+from wget import bar_adaptive, download, ThrowOnErrorOpener
 
 from modules.helper_functions import gunzip
 
@@ -38,6 +38,18 @@ class EmptyRequestWarning(Warning):
 
     def __str__(self):
         return repr(self.message)
+
+
+# Monkey Patch Blanket Exception from wget
+def _typed_http_error(self, url, fp, errcode, errmsg, headers):
+    """
+    # Replace Blanket Exception
+    wget.ThrowOnErrorOpener.http_error_default uses blanket Exception
+    """
+    raise URLError(f"{errcode}: {errcode}")
+
+
+ThrowOnErrorOpener.http_error_default = _typed_http_error
 
 
 class DownloadOAS:
@@ -249,6 +261,7 @@ class DownloadOAS:
         tqdm.write(f"Downloading {len(self.files)} files... \n")
         # Using range to print progess to console
         for index, file in enumerate(self.files):
+            print(file)
             # Use wget to download files, bar_adaptive is from the package
             try:
                 download(file, out=str(self.file_destination), bar=bar_adaptive)
