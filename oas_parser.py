@@ -264,7 +264,7 @@ def parse_config_file(
             # Adjust Output name
             full_output_directory = Path(query_config["OutputDir"])
             full_output_directory = full_output_directory / f"Run_{run_number}"
-            full_output_directory.mkdir()
+            full_output_directory.mkdir(exist_ok=True)
             query_config["OutputDir"] = full_output_directory
 
             if file_format == "yaml" or file_format == "yml":
