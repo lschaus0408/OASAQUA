@@ -261,7 +261,6 @@ class DownloadOAS:
         tqdm.write(f"Downloading {len(self.files)} files... \n")
         # Using range to print progess to console
         for index, file in enumerate(self.files):
-            print(file)
             # Use wget to download files, bar_adaptive is from the package
             try:
                 download(file, out=str(self.file_destination), bar=bar_adaptive)
