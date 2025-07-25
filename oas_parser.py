@@ -297,6 +297,9 @@ def get_aliases(query: dict[str, str]) -> dict[str, str]:
     """
     ((key, value),) = query.items()
     try:
+        # If it is a list of query items, do nothing
+        if isinstance(value, list):
+            return {key: value}
         new_value = QUERY_ALIASES[key][value]
     except KeyError:
         new_value = value
