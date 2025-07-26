@@ -304,7 +304,7 @@ class CSVReader:
         self,
         keyword: str = "full",
         translate: int = 0,
-        path_allowed_sequences: Optional[str] = None,
+        path_allowed_sequences: Optional[Path] = None,
     ) -> None:
         """## Writes the desired data to the object dictionary.
 
@@ -352,11 +352,11 @@ class CSVReader:
         if path_allowed_sequences is None:
             current_file_path = Path(__file__).resolve()
             main_directory = current_file_path.parent.parent
-            path_allowed_sequences = (
-                main_directory / "files" / "csvreader_sequence_set.json"
-            )
+            used_path: Path = main_directory / "files" / "csvreader_sequence_set.json"
+        else:
+            used_path = path_allowed_sequences
         # Define sequence keyword set (I haven't found a more elegant solution yet)
-        with open(path_allowed_sequences, "r", encoding="utf-8") as infile:
+        with open(used_path, "r", encoding="utf-8") as infile:
             sequence_set = json.load(infile)
 
         # Make sure keywords are allowed
@@ -468,6 +468,14 @@ class CSVReader:
         """
 
         self.table.to_csv(path)  # type: ignore
+
+    def reset(self) -> None:
+        """
+        ## Resets the object
+        """
+        self.data = {}
+        self.table = None
+        self.path = None
 
 
 if __name__ == "__main__":
