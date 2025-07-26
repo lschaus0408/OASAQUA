@@ -429,7 +429,6 @@ class API:
         tqdm.write("Processing files... \n")
         processed_size = 0
         for file in tqdm(files, ascii=" ."):
-            print(file, flush=True)
             self.csvreader.set_path(file)
             self.get_dataframe()
             self.set_reader()
@@ -442,7 +441,6 @@ class API:
                 + str(self.filemanager.fileindex - 1).zfill(5)
                 + ".csv"
             )
-            print(saved_filepath, flush=True)
             processed_size += self.filemanager.file_size(path=saved_filepath)
             self.csvreader.reset()
 
@@ -451,6 +449,7 @@ class API:
             if file_path.is_file():
                 new_path = self.filemanager.path.parent / file_path.name
                 file_path.rename(new_path)
+        self.filemanager.path.rmdir()
 
         tqdm.write(
             f"Finished processing files! All files together are {processed_size/1024**2} MB large."
@@ -737,19 +736,6 @@ def import_class_from_file(class_name: str, class_path: Path):
 
 
 if __name__ == "__main__":
-    # output_path = Path("/home/lschaus/OAS_downloads/Run_3")
-    # rdr = CSVReader(path=output_path)
-    # mngr = FileManager(path=output_path, data=rdr, filename="test_name")
-    # dwnldr = DownloadOAS(file_destination=output_path, paired="unpaired")
-    # obj = API(
-    #     filemanager=mngr,
-    #     csvreader=rdr,
-    #     downloader=dwnldr,
-    #     query=(("empty", "empty")),
-    #     metadata=["Author", "Species", "Chain"],
-    #     data=["full", "cdr", "v_call", "j_call"],
-    # )
-    # obj.process_folder()
     args = cast(ArgsTypes, oas_parser().parse_args())
 
     # Parse inputs
