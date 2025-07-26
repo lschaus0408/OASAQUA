@@ -68,6 +68,10 @@ class FileManager:
         """
         assert self.data is not None, "No data as been loaded into self.data"
 
+        if self.path.name != "csv_processed":
+            self.path = self.path / "csv_processed"
+            self.path.mkdir(exist_ok=True)
+
         if max_file_size_gb is None:
             path_name = self.get_file_name()
             self.data.to_csv(path=path_name)
@@ -119,7 +123,7 @@ class FileManager:
         # If merge is False and self.data is populated, then overwrite the data in self.data
         elif self.data is not None and not merge:
             self.data = CSVReader(path=path)
-            self.data.read_csv(no_header=False)
+            self.data.read_csv(no_header=False, keywords=[""])
 
     def file_size(self, path: Optional[Path] = None) -> int:
         """
@@ -135,9 +139,7 @@ class FileManager:
         else:
             return self.path.stat().st_size
 
-    def get_file_name(
-        self,
-    ) -> Path:
+    def get_file_name(self) -> Path:
         """
         ## Returns a Path to save a file to
         Increments the file index
