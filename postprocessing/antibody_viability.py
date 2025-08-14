@@ -20,6 +20,8 @@ from tqdm import tqdm
 from pathos.multiprocessing import ProcessingPool as Pool
 
 import pandas as pd
+import numpy as np
+import numpy.typing as npt
 
 from postprocessing.post_processing import PostProcessor, DTYPE_DICT
 from postprocessing.sequence_tracker import SequenceTracker
@@ -45,6 +47,8 @@ class AntibodyViability(PostProcessor):
         *map(str, range(56, 66)),
         *map(str, range(105, 118)),
     }
+    ADDITIONAL_FEATURE_DIMS = 3
+    ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
     def __init__(
         self,
@@ -55,6 +59,7 @@ class AntibodyViability(PostProcessor):
         batch_size: Union[int, Literal["dynamic"]] = "dynamic",
         n_jobs: int = 1,
         max_batch_size: int = 10000,
+        germline_alignment_threshold: float = 0.5,
     ) -> None:
         super().__init__(
             directory_or_file_path=directory_or_file_path,
@@ -64,13 +69,23 @@ class AntibodyViability(PostProcessor):
             assert isinstance(
                 data, pd.DataFrame
             ), "Data needs to be a pandas DataFrame."
+
+        # Setup data
         self.data = data
         self.path: Optional[Path] = None
         self.sequence_tracker: SequenceTracker = SequenceTracker()
+
+        # Set parameters
         self.filter_strictness = filter_strictness
         self.batch_size = batch_size
         self.n_jobs = n_jobs
         self.max_batch_size = max_batch_size
+        self.germline_alignment_threshold = germline_alignment_threshold
+
+        # Get constants
+        self.imgt_position_map = self.get_imgt_positions(alphabet=self.ALPHABET)
+        self.pos_23 = self.get_imgt_index(23, " ")
+        self.pos_104 = self.get_imgt_index(104, " ")
 
     def load_file(self, file_path: Path, overwrite: bool = False):
         """
@@ -229,95 +244,176 @@ class AntibodyViability(PostProcessor):
         Lastly, the false-read rate is inferred and
         every mutation that occurs less often than the false read-rate is rejected.
         ### Args:
-            \t batch {list} -- Batch of data in the anarci desired format
+            \t batch {tuple[tuple[str, str], ...]} -- Batch of data in the anarci desired format \n
+            \t filter_strictness {Literal} -- Options: 'loose', 'strict'; In 'loose' mode, the
+                                              lowest probability of observing Cys23 and Cys104 in
+                                              a batch is used as a filtering threshold. In addition,
+                                              CDR positions are skipped during filtering.
         """
-        # Create status dict
-        batch_status = {}
-        # Keep track of how often cysteine is conserved at position 23 and 104
-        conserved_23 = []
-        conserved_104 = []
-        # For Sequences that have passed the check, we want to know what AAs are at each position
-        amino_acids_by_position_list = []
-
         # Unpack sequence_ids for faster lookups
         batch_sequence_ids = [seq_id for seq_id, _ in batch]
 
+        # Setup local sequence tracker
+        local_tracker = SequenceTracker()
+        local_tracker.add_default_identities(
+            ids=batch_sequence_ids, default_status="keep"
+        )
+
+        # Get ANARCI Numbering
         numbered_batch = self.get_anarci_numbering(sequences=batch)
-        for index, (sequence_id, numbered_sequence, sequence_info) in enumerate(
-            zip(batch_sequence_ids, numbered_batch[0], numbered_batch[1])
-        ):
+
+        # Assemble numpy array
+        total_feature_dims = len(self.imgt_position_map) + self.ADDITIONAL_FEATURE_DIMS
+        sequence_array = np.full(
+            (len(batch_sequence_ids), total_feature_dims), "-", dtype="U1"
+        )
+        for sequence_index, (
+            sequence_id,
+            numbered_sequence,
+            sequence_info,
+        ) in enumerate(zip(batch_sequence_ids, numbered_batch[0], numbered_batch[1])):
             # From simplest to hardest to calculate we filter out sequences
 
             # If anarci couldn't align the sequence, set status to false
             if numbered_sequence is None:
-                batch_status[sequence_id] = False
+                sequence_array[sequence_index][-1] = "D"
                 continue
 
             # Check if it aligns well to its designated germline
             germline_scores = sequence_info[0].get("germlines", {})
             if any(
-                germline_scores.get(gene, [None, 0])[1] < 0.5
+                germline_scores.get(gene, [None, 0])[1]
+                < self.germline_alignment_threshold
                 for gene in ("v_gene", "j_gene")
             ):
-                batch_status[batch[index][0]] = False
-
-            # Check for by position issues with sequence
-            is_flagged, has_cys23, has_cys104, aa_by_position = (
-                self._flagged_by_position(
-                    numbered_sequence, sequence_info=numbered_batch[1][index]
-                )
-            )
-            # If first return value is ever True, the sequence has been flagged
-            if is_flagged:
-                batch_status[sequence_id] = False
+                sequence_array[sequence_index][-1] = "D"
                 continue
 
-            conserved_23.append(has_cys23)
-            conserved_104.append(has_cys104)
-            amino_acids_by_position_list.append(aa_by_position)
+            # Assign chain type
+            sequence_array[sequence_index][-2] = sequence_info[0]["chain_type"]
 
-        # Check plausible probabilities of mutations
-        if conserved_23:
-            false_read_position_23 = 1 - (sum(conserved_23) / len(conserved_23))
-        else:
-            false_read_position_23 = 0
+            # Mark Rabbit sequences
+            if sequence_info[0]["species"] == "rabbit":
+                sequence_array[sequence_index][-3] = "R"
 
-        if conserved_104:
-            false_read_position_104 = 1 - (sum(conserved_104) / len(conserved_104))
-        else:
-            false_read_position_104 = 0
+            # Fill numpy array as "MSA"
+            try:
+                aa_positions = numbered_sequence[0][0]
+                for position in aa_positions:
+                    position_number, position_letter = position[0]
+                    residue_id = position[1]
+                    if residue_id == "-":
+                        continue
+                    position_index = self.get_imgt_index(
+                        position_number, position_letter
+                    )
+                    sequence_array[sequence_index, position_index] = residue_id
+            except ValueError:
+                sequence_array[sequence_index][-1] = "D"
+                continue
 
-        # Get false read probability (i.e. sequencing error as opposed to mutation)
-        if filter_strictness == "loose":
-            false_read_probability = min(
-                false_read_position_23, false_read_position_104
-            )
-        else:
-            false_read_probability = max(
-                false_read_position_23, false_read_position_104
-            )
-
-        # Get probability of each amino acid at a given numbered position
-        residue_probabilities_by_position = self.get_residue_probabilities(
-            amino_acids_by_position_list
+        # Filter array
+        probability_threshold, sequence_array = self.get_probability_threshold(
+            sequence_array=sequence_array, filter_strictness=filter_strictness
         )
 
-        # Second round of filtering
-        for index, (sequence_id, numbered_sequence) in enumerate(
-            zip(batch_sequence_ids, numbered_batch[0])
-        ):
-            # Skip the ones that have been filtered already
-            if sequence_id in batch_status:
-                continue
-            if self.filter_by_residue_probability(
-                numbered_sequence=numbered_sequence,
-                filter_strictness=filter_strictness,
-                probability_threshold=false_read_probability,
-                residue_probabilities=residue_probabilities_by_position,
-            ):
-                batch_status[sequence_id] = False
+        sequence_array = self.filter_low_frequency_residues(
+            sequence_array=sequence_array, threshold=probability_threshold
+        )
 
-        return batch_status
+        return dict({})
+
+    def filter_low_frequency_residues(
+        self, sequence_array: npt.NDArray, threshold: float
+    ) -> npt.NDArray:
+        """
+        ## Filters sequences that contain residues occuring below the threshold
+        """
+        _, features = sequence_array.shape
+        # Exclude species, chain and deletion marker
+        aa_columns = features - 3
+
+        # Use only unmarked rows
+        valid_mask = sequence_array[:, -1] != "D"
+        valid_rows = np.where(valid_mask)[0]
+        valid_aa_array = sequence_array[valid_mask, :aa_columns]
+
+        # Per-residue frequencies
+        frequencies = []
+        for column in range(aa_columns):
+            # Filter out sequences that have "-" in column
+            column_data = valid_aa_array[:, column]
+            column_data = column_data[column_data != "-"]
+
+            # Skip it the entire column is empty
+            if column_data.size == 0:
+                frequencies.append({})
+
+            residues, counts = np.unique(column_data, return_counts=True)
+            total = counts.sum()
+
+            frequency_dict = {
+                residue: count / total for residue, count in zip(residues, counts)
+            }
+            frequencies.append(frequency_dict)
+
+        # Check rows for residues below threshold
+        for index in valid_rows:
+            for column in range(aa_columns):
+                residue_id = sequence_array[index, column]
+                if residue_id == "-":
+                    continue
+                if frequencies[column].get(residue_id, 0.0) < threshold:
+                    sequence_array[index, -1] = "D"
+                    break
+
+        return sequence_array
+
+    def get_probability_threshold(
+        self, sequence_array: npt.NDArray, filter_strictness: Literal["loose", "strict"]
+    ) -> tuple[float, npt.NDArray]:
+        """
+        ## Calculates the probability threshold based on the Cys23 and Cys104 positions
+        Also marks sequences that don't conserve those positions for deletion.
+        """
+        # Get indices of non-delted before marking for deletion
+        valid_indices = sequence_array[:, -1] != "D"
+
+        # Count Cysteines at conserved positions
+        has_cys_23 = sequence_array[:, self.pos_23] == "C"
+        has_cys_104 = sequence_array[:, self.pos_104] == "C"
+
+        # Mark unconserved cys for deletion
+        sequence_array[~has_cys_23, -1] = "D"
+        sequence_array[~has_cys_104, -1] = "D"
+
+        cys_23_rate = 1 - np.mean(has_cys_23[valid_indices])
+        cys_104_rate = 1 - np.mean(has_cys_104[valid_indices])
+
+        if filter_strictness == "loose":
+            return min(cys_23_rate, cys_104_rate), sequence_array
+
+        return max(cys_23_rate, cys_104_rate), sequence_array
+
+    def get_imgt_index(self, position_number: int, position_letter: str) -> int:
+        """
+        ## Translates the IMGT numbering to an integer between 0-155
+        0-indexes the position numbers from the 1-indexed IMGT numbering.
+        If the IMGT index contains a letter A-Z, then we add to the index
+        the position of the letter. The +1 is to correct for the numbering
+        starting at a non-lettered index. eg.: 112 is followed by 112A
+        ### Arguments:
+            \tposition_number {int} -- IMGT position number\n
+            \tposition_letter {str} -- IMGT insertion letter \t
+        ### Returns:
+            \t int -- Reindexed imgt numbering to a number between 1-155
+        """
+        try:
+            return self.imgt_position_map[(position_number, position_letter)]
+        except KeyError as error:
+            raise ValueError(
+                f"Invalid IMGT position: ({position_number}, '{position_letter}')"
+            ) from error
 
     def filter_by_residue_probability(
         self,
@@ -607,6 +703,54 @@ class AntibodyViability(PostProcessor):
         """
         return anarci(sequences=sequences, assign_germline=self._assign_germline)
 
+    @staticmethod
+    def get_imgt_positions(
+        alphabet: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    ) -> dict[tuple[int, str], int]:
+        """
+        ## List of all possible IMGT positions
+        """
+        imgt_position: list[tuple[int, str]] = []
+        # First part
+        for i in range(1, 112):
+            imgt_position.append((i, " "))
+
+        # Positions 111 canonical and insertions
+        imgt_position.extend((111, l) for l in alphabet)
+
+        # Reversed 112 canonical and insertions
+        imgt_position.extend((112, k) for k in reversed(alphabet))
+
+        # Finish the numbering
+        for i in range(112, 129):
+            imgt_position.append((i, " "))
+
+        return {position: index for index, position in enumerate(imgt_position)}
+
 
 if __name__ == "__main__":
     print("This is the antibody viability file")
+    a = AntibodyViability(directory_or_file_path=Path("./"), output_directory=Path(""))
+    sequence_batch = (
+        (
+            "seq_1_1",
+            "EVQLVQSGGGLVQPGGSLRLSCAGSGFTFSDYGVHWVRQAPGKGLEWVSAIWAGGGTNYASSVMGRFTISRDNAKNSLYLQMNSLRAEDMAVYYCARDKGYSYYYSMDYWGQGTLVTVSS",
+        ),
+        (
+            "seq_1_2",
+            "QVQLQESGPGLVRPSQTLSLTCTVSGFTFTDFYMNWVRQPPGRGLEWIGFIRDKAKGYTTEYNPSVKGRVTMLVDTSKNQFSLRLSSVTAADTAVYYCAREGHTAAPFDYWGQGSLVTVSS",
+        ),
+        (
+            "seq_1_3",
+            "EVQLVESGGGLVQPGGSLRLSCAASGYTFTNYGMNWVRQAPGKGLEWVGWINTYTGEPTYAADFKRRFTFSLDTSKSTAYLQMNSLRAEDTAVYYCAKYPHYYGSSHWYFDVWGQGTLVTVSS",
+        ),
+        (
+            "seq_1_4",
+            "EVQLVESGGGLVQPGGSLRLSWAASGYTFTNYGMNWVRQAPGKGLEWVGWINTYTGEPTYAADFKRRFTFSLDTSKSTAYLQMNSLRAEDTAVYYCAKYPHYYGSSHWYFDVWGQGTLVTVSS",
+        ),
+        (
+            "seq_1_4",
+            "QEQLVESGGGLVKPEGSLTLTCTASGFSFSSRYYMCWVRQAPGKGLEWIACIYAGSSGDTYYASWAKGRFTISKTSSTTVTLQMTRLTAADTATYFCASGYGGVGRAYKLWGPGTLVTVS",
+        ),
+    )
+    a.process_batch(batch=sequence_batch, filter_strictness="loose")
