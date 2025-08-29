@@ -317,11 +317,277 @@ class AntibodyViability(PostProcessor):
             sequence_array=sequence_array, filter_strictness=filter_strictness
         )
 
+        # Filter sequences that have low-probability residues
         sequence_array = self.filter_low_frequency_residues(
             sequence_array=sequence_array, threshold=probability_threshold
         )
 
+        # Filter FWR1 starts
+        sequence_array = self.filter_invalid_fwr1(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(1, " "),
+            end=self.get_imgt_index(27, " "),
+            allowed_skip_positions=[10],
+            domain_condition=("species", "-"),
+        )
+        # Rabbit special case
+        sequence_array = self.filter_invalid_fwr1(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(1, " "),
+            end=self.get_imgt_index(27, " "),
+            allowed_skip_positions=[2, 10],
+            domain_condition=("species", "R"),
+        )
+
+        # Filter FWR2 that is too short
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(39, " "),
+            end=self.get_imgt_index(56, " "),
+            base_threshold=17,
+            delete_below_threshold=True,
+        )
+
+        # Filter FWRH3 that is too short
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(66, " "),
+            end=self.get_imgt_index(105, " "),
+            domain_condition=[("chain_type", "H"), ("species", "-")],
+            adjustment_rules=[(73, " ", 1)],
+            delete_below_threshold=True,
+        )
+
+        # Filter FWRL3 that is too short
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(66, " "),
+            end=self.get_imgt_index(105, " "),
+            domain_condition=[("chain_type", "L"), ("species", "-")],
+            adjustment_rules=[(73, " ", 1), (81, " ", -1), (82, " ", -1)],
+            base_threshold=38,
+            delete_below_threshold=True,
+        )
+
+        # Filter FWR4 that is too short
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(118, " "),
+            end=self.get_imgt_index(129, " "),
+            domain_condition=[("species", "-")],
+            base_threshold=11,
+            delete_below_threshold=True,
+        )
+        # Filter FWR4 that is too long
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(118, " "),
+            end=self.get_imgt_index(129, " "),
+            domain_condition=[("species", "-")],
+            base_threshold=13,
+            delete_below_threshold=False,
+        )
+        # Filter special cases where sequence is from a rabbit
+        # FWRH 3
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(66, " "),
+            end=self.get_imgt_index(105, " "),
+            domain_condition=[("chain_type", "H"), ("species", "R")],
+            adjustment_rules=[(73, " ", 1), (84, " ", -1)],
+            base_threshold=38,
+            delete_below_threshold=True,
+        )
+        # FWRL 3
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(66, " "),
+            end=self.get_imgt_index(105, " "),
+            domain_condition=[("chain_type", "L"), ("species", "R")],
+            adjustment_rules=[
+                (73, " ", 1),
+                (81, " ", -1),
+                (82, " ", -1),
+                (84, " ", -1),
+            ],
+            base_threshold=38,
+            delete_below_threshold=True,
+        )
+        # FWR 4
+        sequence_array = self.filter_domain_lengths(
+            sequence_array=sequence_array,
+            start=self.get_imgt_index(118, " "),
+            end=self.get_imgt_index(129, " "),
+            domain_condition=[("species", "R")],
+            base_threshold=10,
+            delete_below_threshold=True,
+        )
+        # Filter CDRH3 that is too long
+        sequence_array = self.filter_domain_lengths(
+            sequence_array,
+            start=self.get_imgt_index(105, " "),
+            end=self.get_imgt_index(118, " "),
+            domain_condition=("chain_type", "H"),
+            base_threshold=37,
+            delete_below_threshold=False,
+        )
+
+        # NEED TO CHECK THE RETURN NOW
+
         return dict({})
+
+    def filter_invalid_fwr1(
+        self,
+        sequence_array: npt.NDArray,
+        start: int,
+        end: int,
+        allowed_skip_positions: list[int],
+        domain_condition: Optional[list[tuple[str, str]]] = None,
+    ) -> npt.NDArray:
+        """
+        ## Filters Sequences with Invalid FWR1
+        Determines the "start" of the sequence in terms of IMGT position.
+        Then checks if there are any skips after the "start". One can
+        optionally add a list of positions that are allowed to be skipped
+        no matter what. As well as restrict filtering to a certain species.
+        """
+        # Extract domain slice
+        domain_slice = sequence_array[:, start:end]
+        is_gap = domain_slice == "-"
+
+        # First mask (Already filtered)
+        condition_mask = sequence_array[:, -1] != "D"
+
+        # Set domain condition on species
+        if domain_condition is not None:
+            if domain_condition[0] == "species":
+                is_condition = sequence_array[:, -3] == domain_condition[1]
+                condition_mask = condition_mask & is_condition
+            else:
+                raise ValueError(
+                    f"Unsupported domain_condition key: {domain_condition[0]}"
+                )
+
+        # First non-gap position in each sequence
+        first_position = np.argmax(domain_slice != "-", axis=1)
+
+        # Bool array to mark sequences with invalid skips
+        deletion_mask = np.zeros(sequence_array.shape[0], dtype=bool)
+        # Check each sequence
+        for i in range(sequence_array.shape[0]):
+            # Skip if the sequence is marked or if everything is a gap
+            if not condition_mask[i] or np.all(is_gap[i]):
+                continue
+
+            # Check the residues if there are gaps after the first position
+            for j in range(first_position[i] + 1, domain_slice.shape[1]):
+                # Skip if the skip is allowed
+                if j in allowed_skip_positions:
+                    continue
+                # If there is a gap in that sequence at that postion, mark it
+                if is_gap[i, j]:
+                    deletion_mask[i] = True
+                    break
+
+        sequence_array[deletion_mask, -1] = "D"
+        return sequence_array
+
+    def filter_domain_lengths(
+        self,
+        sequence_array: npt.NDArray,
+        start: int,
+        end: int,
+        domain_condition: Optional[list[tuple[str, str]]] = None,
+        base_threshold: int = 37,
+        adjustment_rules: Optional[list[tuple[int, str, int]]] = None,
+        delete_below_threshold: bool = True,
+    ) -> npt.NDArray:
+        """
+        ## Filters sequences based on a given domain and a set of conditions
+        Takes and NDArray of sequences, a domain start & end index, and a length threshold
+        to define the region to be considered for filtering and what length to filter for.
+        The domain condition further specifies if the given sequence needs to be of a
+        specific species or a heavy/light chain, for the filtering conditions to apply.
+        The adjustment rules further specify positions that are allowed to be absent/present
+        without counting toward the filtering threshold.
+        ### Arguments:
+            \tsequence_array {NDArray} -- Array of antibody sequences + feature vectors \n
+            \tstart {int} -- Start index for filtering considerations \n
+            \tend {int} -- End index for filtering considerations \n
+            \tdomain_condition {tuple[str, str]} -- Restrict filtering to sequences of a certain
+                species or chain type. Example: ("chain_type", "H") restricts only to heavy chains;
+                ("species", "R") restricts only to rabbit-origin sequences \n
+            \tbase_threshold {int} -- Length filtering threshold value \n
+            \tadjustment_rules {tuple[int, str, int]} -- Adjusts the threshold value based on a
+                set of conditions. Example: (112, "A", -1) means that if IMGT position 112A
+                is occupied the threshold is lowered by 1 \n
+            \tdelete_below_threshold {bool} -- Default: True; Defines if sequences are filtered
+                below or above the threshold.
+        ### Returns:
+            \t NDArray -- Array of filtered sequences
+        """
+        if adjustment_rules is not None:
+            threshold = base_threshold + self.residue_adjustments(
+                sequence_array=sequence_array, adjustment_rules=adjustment_rules
+            )
+        else:
+            threshold = np.full(sequence_array.shape[0], base_threshold)
+
+        # Only consider non-deleted seqs
+        condition_mask = sequence_array[:, -1] != "D"
+
+        # Set additional conditions
+        if domain_condition is not None:
+            for key, value in domain_condition:
+                if key == "chain_type":
+                    is_condition = sequence_array[:, -2] == value
+                    condition_mask = condition_mask & is_condition
+                elif key == "species":
+                    is_condition = sequence_array[:, -3] == value
+                    condition_mask = condition_mask & is_condition
+                else:
+                    raise ValueError(f"Unsupported domain_condition key: {key}")
+
+        # Get slice
+        region_slice = sequence_array[condition_mask, start:end]
+
+        # Count
+        region_length = np.count_nonzero(region_slice != "-", axis=1)
+        if delete_below_threshold:
+            deletion_mask = region_length < threshold
+        else:
+            deletion_mask = region_length > threshold
+
+        # Mark for deletion
+        affected_indices = np.where(condition_mask)[0][deletion_mask]
+        sequence_array[affected_indices, -1] = "D"
+
+        return sequence_array
+
+    def residue_adjustments(
+        self, sequence_array: npt.NDArray, adjustment_rules: list[tuple[int, str, int]]
+    ) -> npt.NDArray:
+        """
+        ## Computes the per-sequence threshold adjustment values for domain length calculations
+        Adjustment rules define an IMGT position and by how much it affects the adjustment of
+        the threshold
+        ### Arguments:
+            \tsequence_array {NDArray} -- Array of sequences + features \n
+            \tadjustment_rules {list[tuple]} -- List of
+                (IMGT Position, IMGT Letter, Adjustment Value)\n
+        ### Returns:
+            \tNDArray -- An array of shape (N, ) defining the threshold adjustment,
+                where N is the number of sequences
+        """
+        n_sequences = sequence_array.shape[0]
+        adjustments_array = np.zeros(n_sequences, dtype=int)
+
+        for position_number, position_letter, adjustment in adjustment_rules:
+            column_index = self.get_imgt_index(position_number, position_letter)
+            has_residue: npt.NDArray = sequence_array[:, column_index] != "-"
+            adjustments_array += has_residue.astype(int) * adjustment
+
+        return adjustments_array
 
     def filter_low_frequency_residues(
         self, sequence_array: npt.NDArray, threshold: float
@@ -706,24 +972,36 @@ class AntibodyViability(PostProcessor):
     @staticmethod
     def get_imgt_positions(
         alphabet: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        insertion_positions: tuple = (
+            27,
+            30,
+            31,
+            32,
+            33,
+            35,
+            39,
+            52,
+            56,
+            111,
+            112,
+            128,
+        ),
     ) -> dict[tuple[int, str], int]:
         """
-        ## List of all possible IMGT positions
+        ## Dict of all possible IMGT positions
+        Translates a IMGT position token (POS, LET) to an index in
+        the numpy array used to analyze positions.
         """
         imgt_position: list[tuple[int, str]] = []
         # First part
         for i in range(1, 112):
             imgt_position.append((i, " "))
 
-        # Positions 111 canonical and insertions
-        imgt_position.extend((111, l) for l in alphabet)
-
-        # Reversed 112 canonical and insertions
-        imgt_position.extend((112, k) for k in reversed(alphabet))
-
-        # Finish the numbering
-        for i in range(112, 129):
-            imgt_position.append((i, " "))
+            if i in insertion_positions:
+                if i == 112:
+                    imgt_position.extend((112, k) for k in reversed(alphabet))
+                else:
+                    imgt_position.extend((i, l) for l in alphabet)
 
         return {position: index for index, position in enumerate(imgt_position)}
 
